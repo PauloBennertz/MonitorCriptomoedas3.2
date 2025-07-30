@@ -114,6 +114,8 @@ class CryptoApp:
         config_menu = tk.Menu(self.menu_bar, tearoff=0)
         self.menu_bar.add_cascade(label="⚙️ Configurações", menu=config_menu)
         config_menu.add_command(label="🔊 Configurar Sons", command=self.show_sound_config_window)
+        config_menu.add_command(label="Chaves de API", command=self.show_api_config_window)
+
 
         # Header principal com gradiente
         header_frame = ttkb.Frame(self.root, bootstyle="dark")
@@ -525,14 +527,12 @@ class CryptoApp:
         print("LOG: Abrindo a janela de Fluxo de Capital.")
         from pycoingecko import CoinGeckoAPI
         cg_client = CoinGeckoAPI()
-        # CORREÇÃO: Argumento 'self.config' removido
         CapitalFlowWindow(self.root, self, cg_client, robust_services.data_cache, robust_services.rate_limiter)
 
     def show_token_movers_window(self):
         print("LOG: Abrindo a janela de Ganhadores e Perdedores.")
         from pycoingecko import CoinGeckoAPI
         cg_client = CoinGeckoAPI()
-        # CORREÇÃO: Argumento 'self.config' removido
         TokenMoversWindow(self.root, self, cg_client, robust_services.data_cache, robust_services.rate_limiter)
 
     def show_alert_history_window(self):
@@ -542,6 +542,10 @@ class CryptoApp:
         """Abre a janela de configuração de sons."""
         from sound_config_window import SoundConfigWindow
         SoundConfigWindow(self.root, self)
+
+    def show_api_config_window(self):
+        """Abre a janela de configuração de API e gerais."""
+        ApiConfigWindow(self.root, self)
 
     def center_toplevel_on_main(self, toplevel_window):
         self.root.update_idletasks()
@@ -674,21 +678,24 @@ class CryptoApp:
             
             if can_update:
                 # API segura - botão habilitado
-                self.update_button.config(state='normal', text='🔄 Atualizar Preços', bootstyle="info-outline")
-                # Atualiza tooltip com informações detalhadas
-                self.update_button.bind('<Enter>', lambda e: self.show_api_tooltip(usage))
+                self.update_button.config(state='normal', text='🔄 Atualizar Preços', bootstyle="info")
+                self.update_status_label.config(text="API: OK", bootstyle="success")
+                # Remove qualquer animação de perigo
+                self.update_button.config(bootstyle="info")
+                
             else:
                 # API em limite - botão desabilitado
-                self.update_button.config(state='disabled', text='⏸️ API Limitada', bootstyle="secondary-outline")
-                # Atualiza tooltip com informações detalhadas
-                self.update_button.bind('<Enter>', lambda e: self.show_api_tooltip(usage))
+                self.update_button.config(state='disabled', text='⏸️ API Limitada', bootstyle="secondary")
+                self.update_status_label.config(text=f"API: {status_message}", bootstyle="danger")
+                # Adiciona animação de alerta (pulsar) quando a API está limitada
+                self._pulse_button(self.update_button, 'danger')
             
-            # Agenda próxima verificação em 10 segundos
-            self.root.after(10000, self.check_api_status)
+            # Agendamos a próxima verificação para garantir que o tooltip e o status estejam sempre atualizados
+            self.root.after(10000, self.check_api_status) # Verifica a cada 10 segundos
             
         except Exception as e:
             print(f"ERRO: Erro ao verificar status da API: {e}")
-            # Em caso de erro, agenda próxima verificação
+            self.update_status_label.config(text="API: Erro", bootstyle="danger")
             self.root.after(10000, self.check_api_status)
     
     def show_api_tooltip(self, usage):
@@ -706,8 +713,10 @@ class CryptoApp:
         self.tooltip.wm_overrideredirect(True)
         self.tooltip.wm_geometry(f"+{x}+{y}")
         
-        label = tk.Label(self.tooltip, text=tooltip_text, justify=tk.LEFT,
-                        background="#ffffe0", relief=tk.SOLID, borderwidth=1)
+        # Usa ttkb.Label para consistência de estilo
+        label = ttkb.Label(self.tooltip, text=tooltip_text, justify=tk.LEFT,
+                        background="#ffffe0", foreground="black", relief=tk.SOLID, borderwidth=1,
+                        font=("Segoe UI", 9), padding=5) # Ajuste de fonte e padding
         label.pack()
         
         # Remove tooltip após 3 segundos
@@ -736,6 +745,34 @@ class CryptoApp:
         self.root.after(0, lambda: label.config(bootstyle=f"{color_style}"))
         self.root.after(600, lambda: label.config(bootstyle=f"{color_style}-outline"))
         self.root.after(1200, lambda: label.config(bootstyle=original_style))
+
+    def _pulse_button(self, button, color_style):
+        """
+        Cria um efeito de pulsação no botão para destacar um estado de alerta (ex: API limitada).
+        """
+        # Evita múltiplas animações sobrepostas no mesmo botão
+        if hasattr(button, '_pulsing') and button._pulsing:
+            return
+
+        button._pulsing = True
+        original_style = button.cget('bootstyle')
+
+        def animate_pulse(count=0):
+            if not button.winfo_exists(): # Verifica se o botão ainda existe
+                button._pulsing = False
+                return
+
+            if count % 2 == 0:
+                button.config(bootstyle=f"{color_style}")
+            else:
+                button.config(bootstyle=f"{color_style}-outline")
+            
+            if button._pulsing: # Continua a animar apenas se ainda estiver "pulsando"
+                self.root.after(500, lambda: animate_pulse(count + 1))
+            else:
+                button.config(bootstyle=original_style) # Volta ao estilo original
+
+        animate_pulse() # Inicia a animação
 
 def get_current_config():
     """Retorna a configuração atual do aplicativo."""

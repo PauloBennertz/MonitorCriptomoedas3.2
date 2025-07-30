@@ -35,9 +35,9 @@ class CryptoCard(ttkb.Frame):
     Esta é a versão redesenhada com visual moderno.
     """
     def __init__(self, parent, symbol, coin_name=""):
-        self.configure(relief="groove", borderwidth=1)        
-        # Configura um estilo de cartão moderno com borda arredondada e sombra
-        self.configure(relief="solid", borderwidth=1) # MUDANÇA: Estilo de borda corrigido
+        # CORREÇÃO: Chamar super().__init__ primeiro e passar os argumentos de estilo.
+        # Os argumentos de estilo como 'relief' e 'borderwidth' devem ser passados aqui.
+        super().__init__(parent, padding=10, relief="solid", borderwidth=1, bootstyle="dark")
         
         # Armazena os dados
         self.symbol = symbol
@@ -360,7 +360,8 @@ class StartupConfigDialog(ttkb.Toplevel):
 
 class AlertConfigDialog(ttkb.Toplevel):
     def __init__(self, parent_app, symbol, alert_config_data=None):
-        super().__init__(parent_app.root)
+        # CORREÇÃO AQUI: parent_app deve ser o master (janela principal), não parent_app.root
+        super().__init__(parent_app) 
         self.parent_app = parent_app
         self.result = None
         self.title(f"Configurar Alertas para {symbol}")
@@ -836,7 +837,8 @@ class AlertConfigDialog(ttkb.Toplevel):
 
 class AlertManagerWindow(ttkb.Toplevel):
     def __init__(self, parent_app):
-        super().__init__(parent_app.root)
+        # CORREÇÃO AQUI: parent_app deve ser o master (janela principal), não parent_app.root
+        super().__init__(parent_app)
         self.parent_app = parent_app
         self.title("Gerenciador de Alertas")
         self.geometry("1200x700")
@@ -1119,7 +1121,8 @@ class AlertManagerWindow(ttkb.Toplevel):
 
 class ManageSymbolsDialog(ttkb.Toplevel):
     def __init__(self, parent_manager):
-        super().__init__(parent_manager.parent_app.root)
+        # CORREÇÃO AQUI: parent_manager.parent_app deve ser o master (janela principal), não parent_manager.parent_app.root
+        super().__init__(parent_manager.parent_app)
         self.parent_app = parent_manager.parent_app
         self.parent_manager = parent_manager
         self.title("Gerenciar Moedas Monitoradas")
@@ -1156,7 +1159,8 @@ class ManageSymbolsDialog(ttkb.Toplevel):
         self.parent_app.center_toplevel_on_main(self)
             
     def _populate_lists(self):
-        self.all_symbols_master = sorted(self.parent_app.all_symbols)
+        # CORREÇÃO AQUI: Acessar a lista de símbolos do monitoring_service que está na parent_app
+        self.all_symbols_master = sorted([coin.get('symbol') for coin in self.parent_app.monitoring_service.all_cg_coins_list if coin.get('symbol')])
         monitored_symbols = {crypto['symbol'] for crypto in self.parent_app.config.get("cryptos_to_monitor", [])}
         self.available_listbox.delete(0, tk.END); self.monitored_listbox.delete(0, tk.END)
         for symbol in self.all_symbols_master:
@@ -1224,7 +1228,8 @@ class ManageSymbolsDialog(ttkb.Toplevel):
 
 class AlertHistoryWindow(ttkb.Toplevel):
     def __init__(self, parent_app):
-        super().__init__(parent_app.root)
+        # CORREÇÃO AQUI: parent_app deve ser o master (janela principal), não parent_app.root
+        super().__init__(parent_app)
         self.parent_app = parent_app
         self.title("Histórico de Alertas")
         self.geometry("1100x600")
