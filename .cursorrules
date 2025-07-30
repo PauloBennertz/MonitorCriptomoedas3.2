@@ -1,0 +1,42 @@
+# Monitor de Criptomoedas - Repositório Privado
+
+## Contexto do Projeto
+- Projeto privado no GitHub
+- Monitor de criptomoedas v3.1
+- Interface tkinter + ttkbootstrap
+- APIs: CoinGecko, Binance
+- Sistema de alertas automáticos
+
+## Preferências do Usuário
+- Sempre responder em português
+- Sons de alerta automáticos (sem botão "Tocar Som")
+- Menu de configurações para definir sons por tipo de alerta
+- Som diferente quando há múltiplos alertas
+- Consolidação de alertas
+
+## Estrutura do Projeto
+- main_app.py: Aplicação principal
+- monitoring_service.py: Serviços de monitoramento
+- notification_service.py: Sistema de alertas
+- core_components.py: Componentes da interface
+- build_exe.py: Script de build do executável
+- api_config_window.py: Configuração de APIs
+
+## APIs Utilizadas
+- CoinGecko: Dados de criptomoedas (gratuita)
+- Binance: Dados de mercado (gratuita)
+- Telegram: Alertas (opcional)
+
+## Funcionalidades Principais
+- Monitoramento em tempo real
+- Alertas personalizáveis
+- Sons automáticos
+- Interface moderna com ttkbootstrap
+- Build com PyInstaller
+
+## Padrões de Código
+- Usar ttkbootstrap para interface moderna
+- Implementar logging para debug
+- Usar threading para operações assíncronas
+- Manter compatibilidade com PyInstaller
+- Tratar erros de API graciosamente 

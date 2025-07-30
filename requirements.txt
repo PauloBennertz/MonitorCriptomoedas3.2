@@ -1,0 +1,7 @@
+ttkbootstrap==1.14.1
+Pillow==10.4.0
+pandas==2.3.1
+numpy==2.3.1
+requests==2.32.4
+pycoingecko==3.2.0
+pyinstaller==6.5.0 

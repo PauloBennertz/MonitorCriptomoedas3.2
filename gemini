@@ -1,0 +1,2352 @@
+Com certeza! Vou reorganizar o código para corrigir os problemas de definições duplicadas e refinar a gestão de `asyncio` e mapeamento de símbolos.
+
+Por favor, **substitua o conteúdo dos seus arquivos pelos trechos corrigidos abaixo**. Certifique-se de que os nomes dos arquivos coincidam exatamente.
+
+---
+
+### 1. `robust_services.py` (Sem alterações necessárias, é a fonte de verdade)
+
+```python
+# robust_services.py
+
+import time
+import json
+import hashlib
+import logging
+import pandas as pd
+from collections import deque
+from threading import Lock
+from dataclasses import dataclass, asdict
+from typing import Optional, Dict, Any
+import asyncio # Importar asyncio
+
+# ==========================================
+# 1. RATE LIMITING
+# ==========================================
+class BinanceRateLimiter:
+    """
+    Controla o limite de requisições para APIs, simulando limites da Binance.
+    Pode ser adaptado para outros limites de API, como CoinGecko.
+    """
+    def __init__(self):
+        self.requests_1min = deque() # Armazena timestamps das requisições no último minuto
+        self.requests_5min = deque() # Armazena timestamps das requisições nos últimos 5 minutos
+        self.lock = Lock() # Garante thread-safety para acesso às filas
+        self.limit_1min = 1000 # Limite de requisições por minuto
+        self.limit_5min = 5000 # Limite de requisições por 5 minutos
+    
+    def wait_if_needed(self):
+        """
+        Pausa a execução se o limite de requisições estiver próximo de ser atingido.
+        Este método é SÍNCRONO e deve ser usado em contextos síncronos.
+        """
+        with self.lock: # Bloqueia para acesso seguro em ambiente multi-thread
+            now = time.time()
+
+            # Remove requisições antigas das filas
+            while self.requests_1min and now - self.requests_1min[0] > 60: 
+                self.requests_1min.popleft()
+            while self.requests_5min and now - self.requests_5min[0] > 300: 
+                self.requests_5min.popleft()
+
+            # Verifica e aguarda se o limite de 1 minuto foi atingido
+            if len(self.requests_1min) >= self.limit_1min:
+                # Calcula quanto tempo precisa esperar até a primeira requisição da fila expirar
+                sleep_time = 60 - (now - self.requests_1min[0])
+                if sleep_time > 0:
+                    logging.warning(f"Rate limit 1min atingido. Aguardando {sleep_time:.1f}s...")
+                    time.sleep(sleep_time)
+
+            # Verifica e aguarda se o limite de 5 minutos foi atingido
+            if len(self.requests_5min) >= self.limit_5min:
+                # Calcula quanto tempo precisa esperar até a primeira requisição da fila expirar
+                sleep_time = 300 - (now - self.requests_5min[0])
+                if sleep_time > 0:
+                    logging.warning(f"Rate limit 5min atingido. Aguardando {sleep_time:.1f}s...")
+                    time.sleep(sleep_time)
+
+            # Adiciona o timestamp da requisição atual às filas
+            self.requests_1min.append(time.time())
+            self.requests_5min.append(time.time())
+
+    def wait_and_execute_sync(self, func, *args, **kwargs):
+        """
+        Aplica o rate limit e executa uma função síncrona.
+        Destinado a ser usado com asyncio.get_event_loop().run_in_executor() ou similar.
+        """
+        self.wait_if_needed() # Usa a lógica de espera síncrona existente
+        return func(*args, **kwargs) # Executa a função síncrona diretamente
+
+# Instância global para ser usada em todo o projeto.
+# Isso garante que todos os módulos compartilhem o mesmo rate limiter.
+rate_limiter = BinanceRateLimiter()
+
+# ==========================================
+# 2. CACHE DE DADOS
+# ==========================================
+@dataclass
+class CachedData:
+    """Estrutura para armazenar dados em cache junto com seu timestamp."""
+    data: Any
+    timestamp: float
+
+class DataCache:
+    """
+    Implementa um sistema de cache simples para dados de API.
+    Evita requisições repetidas para os mesmos dados dentro de um período TTL (Time To Live).
+    """
+    def __init__(self, default_ttl=300): # TTL padrão de 300 segundos (5 minutos)
+        self.cache: Dict[str, CachedData] = {} # Dicionário para armazenar os dados em cache
+        self.default_ttl = default_ttl # Tempo padrão de vida do cache
+        self.lock = Lock() # Garante thread-safety para acesso ao cache
+    
+    def _generate_key(self, *args, **kwargs) -> str:
+        """
+        Gera uma chave única para o cache com base nos argumentos da função.
+        Usa MD5 para criar um hash da representação JSON dos argumentos.
+        """
+        # Ordena os kwargs para garantir que a ordem não afete a chave do cache
+        key_data = {"args": args, "kwargs": sorted(kwargs.items())}
+        key_str = json.dumps(key_data, sort_keys=True) # sort_keys garante consistência
+        return hashlib.md5(key_str.encode()).hexdigest()
+    
+    def get(self, key_args: Dict[str, Any], ttl: Optional[int] = None) -> Optional[Any]:
+        """
+        Tenta recuperar dados do cache.
+        Retorna os dados se estiverem no cache e não tiverem expirado, caso contrário, retorna None.
+        """
+        if ttl is None: 
+            ttl = self.default_ttl
+        key = self._generate_key(**key_args)
+        with self.lock: # Bloqueia para acesso seguro
+            if key not in self.cache: 
+                logging.debug(f"Cache MISS para {key_args}") # Log de falta de cache
+                return None
+            cached = self.cache[key]
+            if time.time() - cached.timestamp > ttl: # Verifica se o cache expirou
+                logging.debug(f"Cache EXPIRED para {key_args}") # Log de expiração de cache
+                del self.cache[key] # Remove o item expirado
+                return None
+            logging.debug(f"Cache HIT para {key_args}") # Log de acerto de cache
+            return cached.data # Retorna os dados cacheados
+
+    def set(self, key_args: Dict[str, Any], data: Any):
+        """
+        Armazena dados no cache.
+        """
+        key = self._generate_key(**key_args)
+        with self.lock: # Bloqueia para acesso seguro
+            self.cache[key] = CachedData(data=data, timestamp=time.time())
+            logging.debug(f"Cache SET para {key_args}") # Log de item adicionado ao cache
+
+# Instância global para ser usada em todo o projeto.
+# Isso garante que todos os módulos compartilhem o mesmo cache de dados.
+data_cache = DataCache()
+
+# ==========================================
+# 3. VALIDAÇÃO ROBUSTA
+# ==========================================
+class DataValidator:
+    """
+    Fornece métodos estáticos para validação segura de dados.
+    """
+    @staticmethod
+    def safe_float(value: Any, default: float = 0.0) -> float:
+        """
+        Converte um valor para float de forma segura.
+        Retorna um valor padrão se a conversão falhar.
+        """
+        try:
+            if value is None: 
+                return default
+            return float(value)
+        except (ValueError, TypeError):
+            return default
+    
+    @staticmethod
+    def safe_price(value: Any, default: float = 0.0) -> float:
+        """
+        Converte um valor para preço (float) de forma segura, garantindo que seja não-negativo.
+        """
+        price = DataValidator.safe_float(value, default)
+        return price if price >= 0 else default
+        
+    @staticmethod
+    def validate_symbol(symbol: str) -> bool:
+        """
+        Valida se uma string é um símbolo de moeda válido (ex: termina com 'USDT').
+        Exemplo básico de validação. Pode ser expandido.
+        """
+        return isinstance(symbol, str) and symbol.endswith('USDT') and len(symbol) > 4
+
+```
+
+---
+
+### 2. `core_components.py` (Remoção das definições duplicadas)
+
+```python
+# core_components.py
+import json
+import tkinter as tk
+from tkinter import ttk, messagebox, filedialog
+import os
+import sys
+import winsound # Nota: Este módulo é específico do Windows. Para cross-platform, seria necessário outra biblioteca.
+import ttkbootstrap as ttkb
+import pandas as pd
+
+# --- IMPORTAÇÃO CORRIGIDA: Robust Services ---
+# Agora importamos as classes de robust_services.py
+from robust_services import DataCache, BinanceRateLimiter, DataValidator 
+# ---------------------------------------------
+
+TOOLTIP_DEFINITIONS = {
+    "preco_baixo": "Alerta quando o preço da moeda cai e atinge o valor que você definiu.",
+    "preco_alto": "Alerta quando o preço da moeda sobe e atinge o valor que você definiu.",
+    "rsi_sobrevendido": "RSI (Índice de Força Relativa) abaixo de 30. Sugere que o ativo pode estar desvalorizado.",
+    "rsi_sobrecomprado": "RSI (Índice de Força Relativa) acima de 70. Sugere que o ativo pode estar supervalorizado.",
+    "bollinger_abaixo": "O preço fechou abaixo da linha inferior das Bandas de Bollinger.",
+    "bollinger_acima": "O preço fechou acima da linha superior das Bandas de Bollinger.",
+    "macd_cruz_baixa": "Cruzamento de Baixa do MACD. A linha MACD cruza para baixo da linha de sinal.",
+    "macd_cruz_alta": "Cruzamento de Alta do MACD. A linha MACD cruza para cima da linha de sinal.",
+    "mme_cruz_morte": "Cruz da Morte (MME 50 cruza para baixo da 200).",
+    "mme_cruz_dourada": "Cruz Dourada (MME 50 cruza para cima da 200).",
+    "fuga_capital_significativa": "Alerta se o volume de 24h for maior que X% da capitalização de mercado E a variação de preço for menor que Y%. Ex: '5,-1.0' para Volume > 5% do Cap.Merc. e Var < -1% (0 para sem % de variação no preço).",
+    "entrada_capital_significativa": "Alerta se o volume de 24h for maior que X% da capitalização de mercado E a variação de preço for maior que Y%. Ex: '5,1.0' para Volume > 5% do Cap.Merc. e Var > 1% (0 para sem % de variação no preço)."
+}
+
+def get_application_path():
+    """Retorna o caminho do diretório da aplicação."""
+    if getattr(sys, 'frozen', False):
+        return os.path.dirname(sys.executable)
+    return os.path.dirname(os.path.abspath(__file__))
+
+class CryptoCard(ttkb.Frame):
+    """
+    Componente visual para exibir os dados de uma criptomoeda.
+    Esta é a versão evoluída com nome completo, volume, e mais dados de supply.
+    """
+    def __init__(self, parent, symbol, coin_name="", contract_address=""):
+        super().__init__(parent, padding=10, borderwidth=1, relief="solid")
+        self.symbol = symbol
+        self.previous_price = 0.0 # Atributo para o efeito "Live Ticker"
+        self.contract_address = contract_address # Guardar endereço do contrato se houver
+
+        # --- CABEÇALHO DO CARD ---
+        header_frame = ttkb.Frame(self)
+        header_frame.pack(fill='x', pady=(0, 10))
+        
+        # Tenta obter o nome completo da moeda através do MonitoringService se disponível
+        coin_name_from_service = coin_name
+        if hasattr(parent, 'master') and hasattr(parent.master, 'monitoring_service'): # Verifica se está dentro de um canvas/frame que tem acesso à app principal
+            try:
+                # Usa o symbol completo (ex: BTCUSDT) para buscar o nome
+                coin_name_from_service = parent.master.monitoring_service.get_coin_name_by_symbol(symbol + 'USDT') 
+            except Exception:
+                pass # Se der erro ao buscar o nome, usa o que foi passado inicialmente
+
+        self.full_name_label = ttkb.Label(header_frame, text=f"{coin_name_from_service}", font=("-size 12 -weight bold"))
+        self.full_name_label.pack(side='left')
+        
+        self.symbol_label = ttkb.Label(header_frame, text=f"({symbol})", font=("-size 10"), bootstyle="secondary")
+        self.symbol_label.pack(side='left', padx=5)
+
+        # --- DADOS DO CARD ---
+        self.data_labels = {}
+        data_frame = ttkb.Frame(self)
+        data_frame.pack(fill='x')
+        
+        # Labels a serem criadas. Adicionados novos campos para Market Cap e Supply.
+        labels_to_create = {
+            "current_price": "Preço Atual:", 
+            "price_change_24h": "Variação (24h):", 
+            "price_change_1h": "Variação (1h):", # NOVO: Variação de 1h
+            "volume_24h": "Volume (24h):", 
+            "market_cap": "Capitalização:", # NOVO: Market Cap
+            "market_cap_rank": "Rank Cap.Merc.:", # NOVO: Rank de Market Cap
+            "circulating_supply": "Supply Circulante:", # NOVO: Supply Circulante
+            "total_supply": "Supply Total:", # NOVO: Supply Total
+            "max_supply": "Supply Máximo:", # NOVO: Supply Máximo
+            "rsi_signal": "RSI:", 
+            "bollinger_signal": "Bollinger:", 
+            "macd_signal": "MACD:", 
+            "mme_cross": "Cruzamento MME:"
+        }
+        
+        for i, (key, text) in enumerate(labels_to_create.items()):
+            ttkb.Label(data_frame, text=text, font=("-weight bold")).grid(row=i, column=0, sticky='w', pady=2, padx=5)
+            label = ttkb.Label(data_frame, text="Carregando...")
+            label.grid(row=i, column=1, sticky='w', padx=5)
+            self.data_labels[key] = label
+            
+        data_frame.columnconfigure(1, weight=1)
+
+class Tooltip:
+    """Cria uma caixa de dicas que aparece ao passar o mouse sobre um widget."""
+    def __init__(self, widget):
+        self.widget = widget
+        self.tooltip_window = None
+        self.widget.bind("<Enter>", self.on_enter)
+        self.widget.bind("<Leave>", self.on_leave)
+
+    def on_enter(self, event=None):
+        # Chama show_tooltip apenas se houver um texto definido
+        if hasattr(self, 'tooltip_text') and self.tooltip_text:
+            self.show_tooltip(self.tooltip_text)
+
+    def on_leave(self, event=None):
+        self.hide_tooltip()
+
+    def set_text(self, text):
+        self.tooltip_text = text
+
+    def show_tooltip(self, text):
+        self.hide_tooltip()
+        if not text: return
+        x, y, _, _ = self.widget.bbox("insert")
+        x += self.widget.winfo_rootx() + 25
+        y += self.widget.winfo_rooty() + 25
+        self.tooltip_window = tk.Toplevel(self.widget)
+        self.tooltip_window.wm_overrideredirect(True)
+        self.tooltip_window.wm_geometry(f"+{x}+{y}")
+        label = ttkb.Label(self.tooltip_window, text=text, justify='left', background="#1c1c1c", foreground="white", relief='solid', borderwidth=1, font=("Helvetica", 10, "normal"), padding=8, wraplength=400)
+        label.pack(ipadx=1)
+
+    def hide_tooltip(self):
+        if self.tooltip_window: self.tooltip_window.destroy()
+        self.tooltip_window = None
+
+# Funções de cálculo de TA (mantidas como estão, pois você já as tem em technical_analysis.py)
+# calculate_rsi, calculate_bollinger_bands, calculate_macd, calculate_emas
+# Nota: Essas funções serão importadas de `technical_analysis.py` no `monitoring_service.py`
+
+class StartupConfigDialog(ttkb.Toplevel):
+    def __init__(self, parent, all_symbols_list, config):
+        super().__init__(parent) 
+        self.parent_app = parent # Guarda a referência para a MainApplication
+        self.title("Configuração de Sessão de Monitoramento")
+        self.config = config
+        self.all_symbols_master = all_symbols_list
+        self.session_started = False
+        self.protocol("WM_DELETE_WINDOW", self.on_close)
+        self.grab_set()
+        self.geometry("800x600")
+
+        main_frame = ttkb.Frame(self, padding=15)
+        main_frame.pack(expand=True, fill='both')
+
+        telegram_frame = ttkb.LabelFrame(main_frame, text="Configuração do Telegram", padding=15)
+        telegram_frame.pack(fill='x', pady=(0, 15))
+        
+        ttkb.Label(telegram_frame, text="Bot Token:").grid(row=0, column=0, sticky='w', padx=5, pady=5)
+        self.token_var = tk.StringVar(value=self.config.get("telegram_bot_token", ""))
+        self.token_entry = ttkb.Entry(telegram_frame, textvariable=self.token_var, width=60)
+        self.token_entry.grid(row=0, column=1, sticky='ew', padx=5)
+        
+        ttkb.Label(telegram_frame, text="Chat ID:").grid(row=1, column=0, sticky='w', padx=5, pady=5)
+        self.chat_id_var = tk.StringVar(value=self.config.get("telegram_chat_id", ""))
+        self.chat_id_entry = ttkb.Entry(telegram_frame, textvariable=self.chat_id_var, width=60)
+        self.chat_id_entry.grid(row=1, column=1, sticky='ew', padx=5)
+        telegram_frame.columnconfigure(1, weight=1)
+
+        paned_window = ttkb.PanedWindow(main_frame, orient='horizontal')
+        paned_window.pack(fill='both', expand=True)
+
+        left_pane = ttkb.Frame(paned_window, padding=5)
+        paned_window.add(left_pane, weight=1)
+
+        ttkb.Label(left_pane, text="Moedas Disponíveis").pack(anchor='w')
+        self.search_var = tk.StringVar()
+        self.search_var.trace_add("write", self._filter_available_list)
+        search_entry = ttkb.Entry(left_pane, textvariable=self.search_var)
+        search_entry.pack(fill='x', pady=(5, 10))
+        
+        self.available_listbox = tk.Listbox(left_pane, selectmode='extended', exportselection=False, height=15)
+        self.available_listbox.pack(fill='both', expand=True)
+
+        buttons_frame = ttkb.Frame(paned_window)
+        paned_window.add(buttons_frame)
+        
+        ttkb.Button(buttons_frame, text=">>", command=self._add_symbols, bootstyle="outline").pack(pady=20, padx=10)
+        ttkb.Button(buttons_frame, text="<<", command=self._remove_symbols, bootstyle="outline").pack(pady=20, padx=10)
+
+        right_pane = ttkb.Frame(paned_window, padding=5)
+        paned_window.add(right_pane, weight=1)
+        
+        ttkb.Label(right_pane, text="Moedas Monitoradas").pack(anchor='w')
+        self.monitored_listbox = tk.Listbox(right_pane, selectmode='extended', exportselection=False)
+        self.monitored_listbox.pack(fill='both', expand=True, pady=(5,0))
+
+        start_button = ttkb.Button(main_frame, text="Iniciar Monitoramento", command=self.on_start, bootstyle="success", padding=10)
+        start_button.pack(side='bottom', pady=(15, 0))
+
+        self._populate_lists()
+        self.center_window()
+
+    def _populate_lists(self):
+        self.available_listbox.delete(0, tk.END)
+        self.monitored_listbox.delete(0, tk.END)
+        
+        monitored_symbols = {crypto.get('symbol') for crypto in self.config.get("cryptos_to_monitor", []) if crypto.get('symbol')}
+        
+        for symbol in sorted(self.all_symbols_master):
+            if symbol not in monitored_symbols:
+                self.available_listbox.insert(tk.END, symbol)
+        
+        for symbol in sorted(list(monitored_symbols)):
+            self.monitored_listbox.insert(tk.END, symbol)
+
+    def _filter_available_list(self, *args):
+        search_term = self.search_var.get().upper()
+        
+        self.available_listbox.delete(0, tk.END)
+        
+        monitored_symbols = set(self.monitored_listbox.get(0, tk.END))
+
+        if not search_term:
+            for symbol in sorted(self.all_symbols_master):
+                if symbol not in monitored_symbols:
+                    self.available_listbox.insert(tk.END, symbol)
+        else:
+            for symbol in self.all_symbols_master:
+                if search_term in symbol.upper() and symbol not in monitored_symbols:
+                    self.available_listbox.insert(tk.END, symbol)
+
+    def _add_symbols(self):
+        selected_indices = self.available_listbox.curselection()
+        if not selected_indices: return
+        
+        symbols_to_move = [self.available_listbox.get(i) for i in selected_indices]
+        for symbol in sorted(symbols_to_move):
+            self.monitored_listbox.insert(tk.END, symbol)
+        
+        for i in sorted(selected_indices, reverse=True):
+            self.available_listbox.delete(i)
+
+    def _remove_symbols(self):
+        selected_indices = self.monitored_listbox.curselection()
+        if not selected_indices: return
+        
+        symbols_to_move = [self.monitored_listbox.get(i) for i in selected_indices]
+        for symbol in symbols_to_move:
+             all_items = list(self.available_listbox.get(0, tk.END))
+             all_items.append(symbol)
+             all_items.sort()
+             self.available_listbox.delete(0, tk.END)
+             for item in all_items:
+                 self.available_listbox.insert(tk.END, item)
+
+        for i in sorted(selected_indices, reverse=True):
+            self.monitored_listbox.delete(i)
+        
+        self._filter_available_list()
+
+    def on_start(self):
+        self.config["telegram_bot_token"] = self.token_var.get()
+        self.config["telegram_chat_id"] = self.chat_id_var.get()
+        
+        new_monitored_symbols = set(self.monitored_listbox.get(0, tk.END))
+        
+        current_configs = {crypto.get('symbol'): crypto for crypto in self.config.get("cryptos_to_monitor", []) if crypto.get('symbol')}
+        
+        new_config_list = []
+        for symbol in sorted(list(new_monitored_symbols)):
+            if symbol in current_configs:
+                new_config_list.append(current_configs[symbol])
+            else:
+                # Se for um novo símbolo, adiciona um template de configuração padrão
+                # Reutiliza a função _get_default_config da AlertConfigDialog
+                new_config_list.append({
+                    "symbol": symbol,
+                    "alert_config": AlertConfigDialog(self.parent_app, symbol)._get_default_config() # Chama método de instância de outra classe, o que não é ideal, mas funciona para obter o default.
+                })
+                
+        self.config["cryptos_to_monitor"] = new_config_list
+        
+        try:
+            config_path = os.path.join(get_application_path(), "config.json")
+            with open(config_path, 'w', encoding='utf-8') as f:
+                json.dump(self.config, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            messagebox.showerror("Erro ao Salvar", f"Não foi possível salvar 'config.json':\n{e}", parent=self)
+            return
+            
+        self.session_started = True
+        self.destroy()
+
+    def _get_default_config_for_new_coin(self):
+        """Retorna uma configuração de alerta padrão para uma nova moeda."""
+        return {
+            "notes": "", 
+            "sound": "sons/Alerta.wav", 
+            "contract_address": "", # NOVO CAMPO
+            "conditions": {
+                "preco_baixo": {"enabled": False, "value": 0.0}, 
+                "preco_alto": {"enabled": False, "value": 0.0}, 
+                "rsi_sobrevendido": {"enabled": False, "value": 30.0}, 
+                "rsi_sobrecomprado": {"enabled": False, "value": 70.0}, 
+                "bollinger_abaixo": {"enabled": False}, 
+                "bollinger_acima": {"enabled": False}, 
+                "macd_cruz_baixa": {"enabled": False}, 
+                "macd_cruz_alta": {"enabled": False}, 
+                "mme_cruz_morte": {"enabled": False}, 
+                "mme_cruz_dourada": {"enabled": False},
+                "fuga_capital_significativa": {"enabled": False, "value": "5,-1.0"},
+                "entrada_capital_significativa": {"enabled": False, "value": "5,1.0"}
+            }, 
+            "triggered_conditions": []
+        }
+
+    def on_close(self):
+        self.session_started = False
+        self.destroy()
+    
+    def center_window(self):
+        self.update_idletasks()
+        self.resizable(True, True)
+        min_width = 700
+        min_height = 500
+        self.minsize(min_width, min_height)
+        width, height = self.winfo_width(), self.winfo_height()
+        screen_width, screen_height = self.winfo_screenwidth(), self.winfo_screenheight()
+        x = (screen_width // 2) - (width // 2)
+        y = (screen_height // 2) - (height // 2)
+        self.geometry(f'{width}x{height}+{x}+{y}')
+
+class AlertConfigDialog(ttkb.Toplevel):
+    def __init__(self, parent_app, symbol, alert_config_data=None):
+        super().__init__(parent_app) 
+        self.parent_app = parent_app
+        self.result = None
+        self.title(f"Configurar Alertas para {symbol}")
+        self.geometry("600x750") # Aumentado para acomodar novos campos
+        self.transient(self.master)
+        self.grab_set()
+        self.symbol = symbol
+        self.config_data = alert_config_data if alert_config_data else self._get_default_config()
+        self.vars = {} 
+        
+        main_frame = ttkb.Frame(self, padding="15")
+        main_frame.pack(expand=True, fill="both")
+        
+        btn_frame = ttkb.Frame(main_frame)
+        btn_frame.pack(side="bottom", fill="x", pady=(10, 0)) # Mover para baixo
+        
+        common_frame = ttkb.LabelFrame(main_frame, text="Configurações Gerais", padding=10)
+        common_frame.pack(side="top", fill="x", pady=(0, 15)) # Mover para cima
+
+        ttkb.Button(btn_frame, text="Salvar", command=self.on_save, bootstyle="success").pack(side="left", padx=5)
+        ttkb.Button(btn_frame, text="Cancelar", command=self.destroy, bootstyle="danger").pack(side="left", padx=5)
+        
+        ttkb.Label(common_frame, text="Observações:").grid(row=0, column=0, sticky="w", pady=5)
+        self.notes_var = ttkb.StringVar(value=self.config_data.get('notes', ''))
+        self.notes_entry = ttkb.Entry(common_frame, textvariable=self.notes_var)
+        self.notes_entry.grid(row=0, column=1, sticky="ew", pady=5)
+        
+        ttkb.Label(common_frame, text="Arquivo de Som:").grid(row=1, column=0, sticky="w", pady=5)
+        sound_frame = ttkb.Frame(common_frame)
+        sound_frame.grid(row=1, column=1, sticky="ew")
+        self.sound_var = ttkb.StringVar(value=self.config_data.get('sound', 'sons/Alerta.wav'))
+        self.sound_entry = ttkb.Entry(sound_frame, textvariable=self.sound_var, state="readonly")
+        self.sound_entry.pack(side="left", fill="x", expand=True)
+        ttkb.Button(sound_frame, text="Procurar...", command=self.browse_sound_file, bootstyle="secondary-outline").pack(side="left", padx=5)
+        ttkb.Button(sound_frame, text="▶", command=self.preview_sound, bootstyle="secondary-outline", width=3).pack(side="left", padx=(0,5))
+        common_frame.columnconfigure(1, weight=1)
+
+        # Adicionar campo para Contract Address
+        ttkb.Label(common_frame, text="Endereço Contrato (opcional):").grid(row=2, column=0, sticky="w", pady=5)
+        self.contract_address_var = ttkb.StringVar(value=self.config_data.get('contract_address', ''))
+        self.contract_address_entry = ttkb.Entry(common_frame, textvariable=self.contract_address_var)
+        self.contract_address_entry.grid(row=2, column=1, sticky="ew", pady=5)
+
+
+        conditions_outer_frame = ttkb.LabelFrame(main_frame, text="Gatilhos de Alerta", padding=10)
+        conditions_outer_frame.pack(side="top", fill="both", expand=True)
+
+        canvas = tk.Canvas(conditions_outer_frame, borderwidth=0, highlightthickness=0)
+        scrollbar = ttkb.Scrollbar(conditions_outer_frame, orient="vertical", command=canvas.yview, bootstyle="round-dark")
+        conditions_frame = ttkb.Frame(canvas, padding=(10, 0))
+        canvas.configure(yscrollcommand=scrollbar.set)
+        scrollbar.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="both", expand=True)
+        canvas_frame_id = canvas.create_window((0, 0), window=conditions_frame, anchor="nw")
+        
+        def on_frame_configure(event): canvas.configure(scrollregion=canvas.bbox("all"))
+        def on_canvas_configure(event): canvas.itemconfig(canvas_frame_id, width=event.width)
+        
+        conditions_frame.bind("<Configure>", on_frame_configure)
+        canvas.bind("<Configure>", on_canvas_configure)
+        
+        self._create_condition_widgets(conditions_frame)
+        
+        self.parent_app.center_toplevel_on_main(self)
+        self.resizable(False, True)
+
+    def _get_default_config(self):
+        return {
+            "notes": "", 
+            "sound": "sons/Alerta.wav", 
+            "contract_address": "", # NOVO CAMPO
+            "conditions": {
+                "preco_baixo": {"enabled": False, "value": 0.0}, 
+                "preco_alto": {"enabled": False, "value": 0.0}, 
+                "rsi_sobrevendido": {"enabled": False, "value": 30.0}, 
+                "rsi_sobrecomprado": {"enabled": False, "value": 70.0}, 
+                "bollinger_abaixo": {"enabled": False}, 
+                "bollinger_acima": {"enabled": False}, 
+                "macd_cruz_baixa": {"enabled": False}, 
+                "macd_cruz_alta": {"enabled": False}, 
+                "mme_cruz_morte": {"enabled": False}, 
+                "mme_cruz_dourada": {"enabled": False},
+                "fuga_capital_significativa": {"enabled": False, "value": "5,-1.0"},
+                "entrada_capital_significativa": {"enabled": False, "value": "5,1.0"}
+            }, 
+            "triggered_conditions": []
+        }
+
+    def _create_condition_widgets(self, parent_frame):
+        condition_definitions = {
+            'preco_baixo': {'text': 'Preço Abaixo de ($):', 'has_value': True, 'default': 0.0, 'validation_func': lambda v: v > 0, 'error_msg': "deve ser maior que zero"}, 
+            'preco_alto': {'text': 'Preço Acima de ($):', 'has_value': True, 'default': 0.0, 'validation_func': lambda v: v > 0, 'error_msg': "deve ser maior que zero"}, 
+            'rsi_sobrevendido': {'text': 'Sobrevendido (RSI <=):', 'has_value': True, 'default': 30.0, 'validation_func': lambda v: 0 <= v <= 100, 'error_msg': "entre 0 e 100"}, 
+            'rsi_sobrecomprado': {'text': 'Sobrecomprado (RSI >=):', 'has_value': True, 'default': 70.0, 'validation_func': lambda v: 0 <= v <= 100, 'error_msg': "entre 0 e 100"}, 
+            'bollinger_abaixo': {'text': 'Abaixo da Banda Inferior', 'has_value': False}, 
+            'bollinger_acima': {'text': 'Acima da Banda Superior', 'has_value': False}, 
+            'macd_cruz_baixa': {'text': 'MACD: Cruzamento de Baixa', 'has_value': False}, 
+            'macd_cruz_alta': {'text': 'MACD: Cruzamento de Alta', 'has_value': False}, 
+            'mme_cruz_morte': {'text': 'MME: Cruz da Morte (50/200)', 'has_value': False}, 
+            'mme_cruz_dourada': {'text': 'MME: Cruz Dourada (50/200)', 'has_value': False},
+            'fuga_capital_significativa': {'text': 'Fuga Cap. (Vol > X% Cap.Merc. e Var. Preço < Y%):', 'has_value': True, 'default': '5,-1.0', 'tooltip_extra': "Ex: '5,-1.0' para Volume > 5% do Cap.Merc. e Var < -1%"},
+            'entrada_capital_significativa': {'text': 'Entrada Cap. (Vol > X% Cap.Merc. e Var. Preço > Y%):', 'has_value': True, 'default': '5,1.0', 'tooltip_extra': "Ex: '5,1.0' para Volume > 5% do Cap.Merc. e Var > 1%"}
+        }
+        row = 0
+        for key, details in condition_definitions.items():
+            current_cond_config = self.config_data.get('conditions', {}).get(key, {})
+            enabled_var = tk.BooleanVar(value=current_cond_config.get('enabled', False))
+            value_var = None
+
+            if details['has_value']: 
+                if key in ['fuga_capital_significativa', 'entrada_capital_significativa']:
+                    value_var = tk.StringVar(value=current_cond_config.get('value', details.get('default', '')))
+                else:
+                    value_var = tk.DoubleVar(value=current_cond_config.get('value', details.get('default', 0.0)))
+            
+            self.vars[key] = {'enabled': enabled_var, 'value': value_var}
+            cb = ttkb.Checkbutton(parent_frame, text=details['text'], variable=enabled_var, bootstyle="primary")
+            cb.grid(row=row, column=0, sticky='w', pady=6, padx=5)
+            
+            tooltip_text = TOOLTIP_DEFINITIONS.get(key, "Sem descrição.")
+            if 'tooltip_extra' in details:
+                tooltip_text += "\n" + details['tooltip_extra']
+            
+            # Criação do objeto Tooltip e associação do texto
+            tooltip = Tooltip(cb)
+            tooltip.set_text(tooltip_text)
+            cb.bind("<Enter>", lambda e, tt=tooltip: tt.on_enter())
+            cb.bind("<Leave>", lambda e, tt=tooltip: tt.on_leave())
+
+            if details['has_value']:
+                entry = ttkb.Entry(parent_frame, textvariable=value_var, width=25)
+                entry.grid(row=row, column=1, sticky='w', padx=5)
+                def toggle_entry_state(entry_widget=entry, check_var=enabled_var): entry_widget.config(state='normal' if check_var.get() else 'disabled')
+                cb.config(command=toggle_entry_state); toggle_entry_state()
+            row += 1
+        parent_frame.columnconfigure(1, weight=1)
+
+    def browse_sound_file(self):
+        app_path = get_application_path()
+        initial_dir = os.path.join(app_path, 'sons')
+        if not os.path.isdir(initial_dir): initial_dir = app_path
+        filepath = filedialog.askopenfilename(title="Selecione um arquivo .wav", initialdir=initial_dir, filetypes=[("Arquivos de Som", "*.wav")])
+        if filepath: self.sound_var.set(os.path.relpath(filepath, app_path).replace("\\", "/"))
+
+    def preview_sound(self):
+        sound_path_str = self.sound_var.get()
+        if not sound_path_str: 
+            messagebox.showwarning("Aviso", "Nenhum arquivo de som selecionado.", parent=self); return
+        sound_path = sound_path_str if os.path.isabs(sound_path_str) else os.path.join(get_application_path(), sound_path_str)
+        if os.path.exists(sound_path):
+            try: winsound.PlaySound(sound_path, winsound.SND_FILENAME | winsound.SND_ASYNC)
+            except Exception as e: messagebox.showerror("Erro", f"Não foi possível tocar o som:\n{e}", parent=self)
+        else: messagebox.showerror("Erro", "Arquivo de som não encontrado.", parent=self)
+    
+    def on_save(self):
+        final_config = {
+            "symbol": self.symbol, 
+            "alert_config": {
+                "notes": self.notes_var.get(), 
+                "sound": self.sound_var.get(), 
+                "contract_address": self.contract_address_var.get(), # SALVA ENDEREÇO DO CONTRATO
+                "conditions": {}, 
+                "triggered_conditions": self.config_data.get('triggered_conditions', [])
+            }
+        }
+        condition_definitions = { # Copia as definições novamente para validação
+            'preco_baixo': {'validation_func': lambda v: v > 0, 'error_msg': "deve ser maior que zero"}, 
+            'preco_alto': {'validation_func': lambda v: v > 0, 'error_msg': "deve ser maior que zero"}, 
+            'rsi_sobrevendido': {'validation_func': lambda v: 0 <= v <= 100, 'error_msg': "entre 0 e 100"}, 
+            'rsi_sobrecomprado': {'validation_func': lambda v: 0 <= v <= 100, 'error_msg': "entre 0 e 100"}, 
+            'fuga_capital_significativa': {'validation_func': lambda v: self._validate_capital_flow_value(v), 'error_msg': "formato inválido (ex: '5,-1.0') ou valores fora do range"},
+            'entrada_capital_significativa': {'validation_func': lambda v: self._validate_capital_flow_value(v), 'error_msg': "formato inválido (ex: '5,1.0') ou valores fora do range"}
+        }
+
+        for key, var_dict in self.vars.items():
+            is_enabled = var_dict['enabled'].get()
+            condition_data = {"enabled": is_enabled}
+            if var_dict['value'] is not None:
+                try:
+                    value = var_dict['value'].get()
+                    if is_enabled:
+                        validation = condition_definitions.get(key)
+                        if validation and 'validation_func' in validation:
+                            if not validation['validation_func'](value):
+                                messagebox.showerror("Erro de Validação", f"O valor para '{key}' {validation['error_msg']}.", parent=self); return
+                    
+                    condition_data["value"] = value
+                except tk.TclError:
+                    messagebox.showerror("Erro de Validação", f"Por favor, insira um número válido para '{key}'.", parent=self); return
+                except ValueError as e: # Captura erros de conversão para as novas condições
+                    messagebox.showerror("Erro de Validação", f"Formato ou valor inválido para '{key}': {e}", parent=self); return
+            final_config["alert_config"]["conditions"][key] = condition_data
+        self.result = final_config
+        self.destroy()
+
+    def _validate_capital_flow_value(self, value_str):
+        """Valida o formato 'X,Y' para as condições de capital flow."""
+        try:
+            parts = value_str.split(',')
+            if len(parts) != 2:
+                return False
+            vol_percent = float(parts[0].strip())
+            price_change_percent = float(parts[1].strip())
+            # Valida que as porcentagens estão em um range razoável
+            return (0 <= vol_percent <= 1000) and (-100 <= price_change_percent <= 100)
+        except ValueError:
+            return False
+
+class AlertManagerWindow(ttkb.Toplevel):
+    def __init__(self, parent_app):
+        super().__init__(parent_app) 
+        self.parent_app = parent_app
+        self.title("Gerenciador de Alertas (Configuração por Moeda)")
+        self.geometry("1200x600")
+        self.transient(self.master)
+        self.grab_set()
+        self.paned_window = ttk.PanedWindow(self, orient=tk.HORIZONTAL)
+        self.paned_window.pack(expand=True, fill='both', padx=10, pady=10)
+        
+        # --- Frame Esquerdo: Lista de Símbolos ---
+        symbols_frame = ttkb.Frame(self.paned_window, padding=5)
+        self.symbols_tree = ttkb.Treeview(symbols_frame, columns=('symbol',), show='headings', bootstyle="dark")
+        self.symbols_tree.heading('symbol', text='Moedas Monitoradas')
+        self.symbols_tree.pack(expand=True, fill='both')
+        self.symbols_tree.bind("<<TreeviewSelect>>", self.on_symbol_selected)
+        self.paned_window.add(symbols_frame, weight=1)
+        
+        # --- Botão para Gerenciar Símbolos ---
+        manage_symbols_button = ttkb.Button(symbols_frame, text="Adicionar/Remover Moedas", command=self.manage_monitored_symbols, bootstyle="info-outline")
+        manage_symbols_button.pack(side='bottom', fill='x', pady=(10,0))
+
+        # --- Frame Direito: Detalhes de Alerta ---
+        alerts_frame = ttkb.Frame(self.paned_window, padding=5)
+        alerts_table_frame = ttkb.LabelFrame(alerts_frame, text="Condições de Alerta Ativadas", padding=10)
+        alerts_table_frame.pack(expand=True, fill='both', pady=(0, 10))
+        alerts_controls_frame = ttkb.Frame(alerts_frame)
+        alerts_controls_frame.pack(fill='x')
+        self.paned_window.add(alerts_frame, weight=2)
+        
+        self.conditions_tree = ttkb.Treeview(alerts_table_frame, columns=('condition', 'value'), show='headings', bootstyle="dark")
+        self.conditions_tree.heading('condition', text='Condição'); self.conditions_tree.column('condition', width=250, anchor=tk.W)
+        self.conditions_tree.heading('value', text='Valor'); self.conditions_tree.column('value', width=150, anchor=tk.W)
+        self.conditions_tree.pack(expand=True, fill='both')
+        
+        self.config_alert_btn = ttkb.Button(alerts_controls_frame, text="Configurar Alertas", command=self.open_config_alert_dialog, bootstyle="info", state="disabled")
+        self.config_alert_btn.pack(side='left', padx=5)
+
+        self._populate_symbols_tree()
+        self.parent_app.center_toplevel_on_main(self)
+        
+    def _populate_symbols_tree(self):
+        for i in self.symbols_tree.get_children(): self.symbols_tree.delete(i)
+        monitored_symbols = [crypto.get('symbol') for crypto in self.parent_app.app_config.get("cryptos_to_monitor", []) if crypto.get('symbol')]
+        for symbol in sorted(monitored_symbols): self.symbols_tree.insert('', tk.END, iid=symbol, values=(symbol,))
+        self.on_symbol_selected()
+
+    def on_symbol_selected(self, event=None):
+        selected_items = self.symbols_tree.selection()
+        if not selected_items:
+            for i in self.conditions_tree.get_children(): self.conditions_tree.delete(i)
+            self.config_alert_btn['state'] = 'disabled'
+            return
+        self.config_alert_btn['state'] = 'normal'
+        self._populate_conditions_summary(selected_items[0])
+        
+    def _populate_conditions_summary(self, symbol):
+        for i in self.conditions_tree.get_children(): self.conditions_tree.delete(i)
+        crypto_config = next((c for c in self.parent_app.app_config.get("cryptos_to_monitor", []) if c.get('symbol') == symbol), None)
+        if not crypto_config or 'alert_config' not in crypto_config:
+            self.conditions_tree.insert('', tk.END, values=("Nenhuma configuração encontrada.", ""))
+            return
+        conditions = crypto_config['alert_config'].get('conditions', {})
+        any_enabled = False
+
+        display_names = {
+            'preco_baixo': 'Preço Abaixo', 'preco_alto': 'Preço Acima',
+            'rsi_sobrevendido': 'RSI Sobrevendido', 'rsi_sobrecomprado': 'RSI Sobrecomprado',
+            'bollinger_abaixo': 'Bollinger Abaixo', 'bollinger_acima': 'Bollinger Acima',
+            'macd_cruz_baixa': 'MACD Cruz Baixa', 'macd_cruz_alta': 'MACD Cruz Alta',
+            'mme_cruz_morte': 'MME Cruz Morte', 'mme_cruz_dourada': 'MME Cruz Dourada',
+            'fuga_capital_significativa': 'Fuga de Capital',
+            'entrada_capital_significativa': 'Entrada de Capital'
+        }
+
+        for key, details in conditions.items():
+            if details.get('enabled'):
+                any_enabled = True
+                value_str = ""
+                if 'value' in details and details['value'] is not None:
+                    if key in ['preco_baixo', 'preco_alto']:
+                        value_str = f"${details['value']:,.2f}"
+                    elif key in ['rsi_sobrevendido', 'rsi_sobrecomprado']:
+                        value_str = f"{details['value']:.2f}"
+                    elif key in ['fuga_capital_significativa', 'entrada_capital_significativa']:
+                        try:
+                            vol_percent, price_change_percent = map(float, str(details['value']).split(','))
+                            value_str = f"Vol > {vol_percent:.0f}% Cap.Merc., Var.Preço {'<' if key == 'fuga_capital_significativa' else '>'}{price_change_percent:.1f}%"
+                        except (ValueError, TypeError):
+                            value_str = str(details['value'])
+                    else:
+                        value_str = "Ativado"
+                else:
+                    value_str = "Ativado"
+                
+                self.conditions_tree.insert('', tk.END, values=(display_names.get(key, key.replace('_', ' ').title()), value_str))
+        if not any_enabled:
+             self.conditions_tree.insert('', tk.END, values=("Nenhuma condição habilitada.", ""))
+
+    def get_selected_symbol(self):
+        selected_items = self.symbols_tree.selection()
+        return selected_items[0] if selected_items else None
+        
+    def open_config_alert_dialog(self):
+        selected_symbol = self.get_selected_symbol()
+        if not selected_symbol: return
+        crypto_config = next((c for c in self.parent_app.app_config.get("cryptos_to_monitor", []) if c.get('symbol') == selected_symbol), None)
+        alert_data = crypto_config.get('alert_config') if crypto_config else None
+        
+        # Passa a instância da MainApplication (self.parent_app) para o diálogo
+        dialog = AlertConfigDialog(self.parent_app, selected_symbol, alert_config_data=alert_data)
+        self.wait_window(dialog)
+        
+        if dialog.result:
+            symbol_to_update = dialog.result.pop('symbol')
+            updated_alert_config = dialog.result['alert_config']
+            
+            found = False
+            for crypto in self.parent_app.app_config.get("cryptos_to_monitor", []):
+                if crypto.get('symbol') == symbol_to_update:
+                    crypto['alert_config'] = updated_alert_config
+                    found = True
+                    break
+            if not found:
+                # Se o símbolo não estava na lista, adiciona com a nova config (isso não deve acontecer se o gerenciador de símbolos for usado)
+                self.parent_app.app_config["cryptos_to_monitor"].append({"symbol": symbol_to_update, "alert_config": updated_alert_config})
+            
+            self.parent_app.save_config()
+            messagebox.showinfo("Sucesso", "Configuração de alerta salva!", parent=self)
+            self._populate_conditions_summary(selected_symbol)
+
+    def manage_monitored_symbols(self):
+        # Cria e abre a janela de gerenciamento de símbolos, passando a MainApplication como parent
+        dialog = ManageSymbolsDialog(self.parent_app) 
+        self.wait_window(dialog)
+        self._populate_symbols_tree()
+        self.parent_app.update_coin_cards_display()
+
+class ManageSymbolsDialog(ttkb.Toplevel):
+    def __init__(self, parent_app): 
+        super().__init__(parent_app) 
+        self.parent_app = parent_app
+        self.title("Gerenciar Moedas Monitoradas")
+        self.geometry("800x600")
+        self.transient(self.master)
+        self.grab_set()
+        
+        main_frame = ttkb.Frame(self, padding=10)
+        main_frame.pack(expand=True, fill='both')
+        
+        # --- Frame Esquerdo: Moedas Disponíveis ---
+        left_frame = ttkb.LabelFrame(main_frame, text="Moedas Disponíveis", padding=10)
+        left_frame.pack(side='left', fill='both', expand=True, padx=(0, 5))
+        self.available_search_var = ttkb.StringVar()
+        self.available_search_var.trace_add("write", self._filter_available)
+        self.available_entry = ttkb.Entry(left_frame, textvariable=self.available_search_var)
+        self.available_entry.pack(fill='x', pady=(0, 5))
+        self.available_listbox = tk.Listbox(left_frame, selectmode='extended', exportselection=False)
+        self.available_listbox.pack(fill='both', expand=True)
+        
+        # --- Frame Central: Botões ---
+        buttons_frame = ttkb.Frame(main_frame, padding=10)
+        buttons_frame.pack(side='left', fill='y', anchor='center')
+        ttkb.Button(buttons_frame, text="Adicionar >>", command=self._add_symbols, bootstyle="success-outline").pack(pady=5)
+        ttkb.Button(buttons_frame, text="<< Remover", command=self._remove_symbols, bootstyle="danger-outline").pack(pady=5)
+        
+        # --- Frame Direito: Moedas Monitoradas ---
+        right_frame = ttkb.LabelFrame(main_frame, text="Moedas Monitoradas", padding=10)
+        right_frame.pack(side='left', fill='both', expand=True, padx=(5, 0))
+        self.monitored_search_var = ttkb.StringVar()
+        self.monitored_search_var.trace_add("write", self._filter_monitored)
+        self.monitored_entry = ttkb.Entry(right_frame, textvariable=self.monitored_search_var)
+        self.monitored_entry.pack(fill='x', pady=(0, 5))
+        self.monitored_listbox = tk.Listbox(right_frame, selectmode='extended', exportselection=False)
+        self.monitored_listbox.pack(fill='both', expand=True)
+        
+        # --- Frame Inferior: Botões de Ação ---
+        bottom_frame = ttkb.Frame(self, padding=10)
+        bottom_frame.pack(side='bottom', fill='x')
+        ttkb.Button(bottom_frame, text="Salvar Alterações", command=self.on_save, bootstyle="success").pack(side='left')
+        ttkb.Button(bottom_frame, text="Cancelar", command=self.destroy, bootstyle="secondary").pack(side='left', padx=10)
+        
+        self._populate_lists()
+        self.parent_app.center_toplevel_on_main(self)
+            
+    def _populate_lists(self):
+        # Usa a lista de símbolos que já foi carregada pela MainApplication e passada para cá
+        self.all_symbols_master = sorted([coin.get('symbol') for coin in self.parent_app.monitoring_service.get_all_coins_list() if coin.get('symbol')])
+        
+        monitored_symbols = {crypto['symbol'] for crypto in self.parent_app.app_config.get("cryptos_to_monitor", [])}
+        
+        self.available_listbox.delete(0, tk.END); self.monitored_listbox.delete(0, tk.END)
+        
+        for symbol in self.all_symbols_master:
+            if symbol not in monitored_symbols: self.available_listbox.insert(tk.END, symbol)
+        for symbol in sorted(list(monitored_symbols)): self.monitored_listbox.insert(tk.END, symbol)
+        
+    def _filter_available(self, *args):
+        search_term = self.available_search_var.get().upper()
+        self.available_listbox.delete(0, tk.END)
+        monitored_symbols = set(self.monitored_listbox.get(0, tk.END))
+        for symbol in self.all_symbols_master:
+            if search_term in symbol.upper() and symbol not in monitored_symbols:
+                self.available_listbox.insert(tk.END, symbol)
+            
+    def _filter_monitored(self, *args):
+        search_term = self.monitored_search_var.get().upper()
+        current_monitored = sorted([c['symbol'] for c in self.parent_app.app_config.get("cryptos_to_monitor", [])])
+        self.monitored_listbox.delete(0, tk.END)
+        for symbol in current_monitored:
+            if search_term in symbol.upper(): self.monitored_listbox.insert(tk.END, symbol)
+            
+    def _add_symbols(self):
+        selected_indices = self.available_listbox.curselection()
+        if not selected_indices: return
+        symbols_to_move = [self.available_listbox.get(i) for i in selected_indices]
+        for i in sorted(selected_indices, reverse=True): self.available_listbox.delete(i)
+        
+        current_monitored = list(self.monitored_listbox.get(0, tk.END))
+        for symbol in symbols_to_move:
+            if symbol not in current_monitored: current_monitored.append(symbol)
+        
+        self.monitored_listbox.delete(0, tk.END)
+        for symbol in sorted(current_monitored):
+            self.monitored_listbox.insert(tk.END, symbol)
+
+    def _remove_symbols(self):
+        selected_indices = self.monitored_listbox.curselection()
+        if not selected_indices: return
+        symbols_to_move = [self.monitored_listbox.get(i) for i in selected_indices]
+        for i in sorted(selected_indices, reverse=True): self.monitored_listbox.delete(i)
+        
+        current_available = list(self.available_listbox.get(0, tk.END))
+        for symbol in symbols_to_move:
+            if symbol not in current_available: current_available.append(symbol)
+        
+        self.available_listbox.delete(0, tk.END)
+        for symbol in sorted(current_available):
+            self.available_listbox.insert(tk.END, symbol)
+        
+    def on_save(self):
+        new_monitored_symbols = set(self.monitored_listbox.get(0, tk.END))
+        current_configs = {crypto['symbol']: crypto for crypto in self.parent_app.app_config.get("cryptos_to_monitor", [])}
+        
+        new_config_list = []
+        for symbol in sorted(list(new_monitored_symbols)):
+            if symbol in current_configs:
+                new_config_list.append(current_configs[symbol])
+            else:
+                # Adiciona nova moeda com configuração padrão
+                new_config_list.append({
+                    "symbol": symbol,
+                    "alert_config": AlertConfigDialog(self.parent_app, symbol)._get_default_config() # Reutiliza a função de default
+                })
+
+        self.parent_app.app_config["cryptos_to_monitor"] = new_config_list
+        self.parent_app.save_config()
+        self.parent_app.update_coin_cards_display()
+        messagebox.showinfo("Sucesso", "Lista de moedas atualizada.", parent=self)
+        self.destroy()
+
+class AlertHistoryWindow(ttkb.Toplevel):
+    def __init__(self, parent_app):
+        super().__init__(parent_app) 
+        self.parent_app = parent_app
+        self.title("Histórico de Alertas Disparados")
+        self.geometry("1000x500")
+        self.transient(self.master)
+        self.grab_set()
+
+        main_frame = ttkb.Frame(self, padding=10)
+        main_frame.pack(expand=True, fill='both')
+
+        tree_frame = ttkb.Frame(main_frame)
+        tree_frame.pack(expand=True, fill='both')
+        
+        self.tree = ttkb.Treeview(tree_frame, columns=('timestamp', 'symbol', 'trigger'), show='headings', bootstyle="dark")
+        self.tree.heading('timestamp', text='Data/Hora')
+        self.tree.heading('symbol', text='Símbolo')
+        self.tree.heading('trigger', text='Gatilho')
+
+        self.tree.column('timestamp', width=150, anchor='w')
+        self.tree.column('symbol', width=100, anchor='w')
+        self.tree.column('trigger', width=350, anchor='w')
+
+        vsb = ttkb.Scrollbar(tree_frame, orient="vertical", command=self.tree.yview, bootstyle="round-dark")
+        self.tree.configure(yscrollcommand=vsb.set)
+        
+        self.tree.pack(side='left', expand=True, fill='both')
+        vsb.pack(side='right', fill='y')
+
+        btn_frame = ttkb.Frame(main_frame)
+        btn_frame.pack(fill='x', pady=(10, 0))
+
+        self.analyze_btn = ttkb.Button(btn_frame, text="Analisar Detalhes", command=self._open_analysis, bootstyle="info", state="disabled")
+        self.analyze_btn.pack(side='left', padx=5)
+        ttkb.Button(btn_frame, text="Atualizar", command=self._load_history).pack(side='left', padx=5)
+        ttkb.Button(btn_frame, text="Limpar Histórico", command=self._clear_history, bootstyle="danger-outline").pack(side='left', padx=5)
+        ttkb.Button(btn_frame, text="Fechar", command=self.destroy, bootstyle="secondary").pack(side='right', padx=5)
+
+        self.tree.bind("<<TreeviewSelect>>", self._on_selection)
+        self._load_history()
+        self.parent_app.center_toplevel_on_main(self)
+
+    def _load_history(self):
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+        
+        self.history_data = self.parent_app.alert_history
+        
+        for i, record in enumerate(self.history_data):
+            # Garante que os campos esperados existam, senão usa 'N/A'
+            timestamp = record.get('timestamp', 'N/A')
+            coin_symbol = record.get('coin_symbol', 'N/A') # Corrigido: de 'symbol' para 'coin_symbol'
+            alert_type = record.get('alert_type', 'N/A')   # Corrigido: de 'trigger' para 'alert_type'
+            self.tree.insert('', tk.END, iid=i, values=(timestamp, coin_symbol, alert_type))
+        self._on_selection()
+
+    def _on_selection(self, event=None):
+        self.analyze_btn['state'] = 'normal' if self.tree.selection() else 'disabled'
+
+    def _open_analysis(self):
+        selected_item = self.tree.selection()
+        if not selected_item: return
+        
+        item_index = int(selected_item[0])
+        record = self.history_data[item_index]
+        
+        if 'data' in record and record['data']:
+            AlertAnalysisWindow(self, record['data'])
+        else:
+            messagebox.showinfo("Sem Dados", "Não há dados de análise detalhada para este alerta.", parent=self)
+
+    def _clear_history(self):
+        if messagebox.askyesno("Confirmar", "Tem certeza que deseja apagar todo o histórico de alertas?", parent=self):
+            self.parent_app.notification_service.clear_history_file() # Chama o método do service
+            self.parent_app.alert_history = self.parent_app.notification_service.load_alert_history() # Recarrega
+            self._load_history()
+            messagebox.showinfo("Sucesso", "O histórico de alertas foi limpo.", parent=self)
+
+class AlertAnalysisWindow(ttkb.Toplevel):
+    def __init__(self, parent, analysis_data):
+        super().__init__(parent)
+        self.title(f"Análise Detalhada para {analysis_data.get('symbol', 'N/A')}")
+        self.geometry("500x600") # Aumentado para acomodar mais dados
+        self.transient(parent)
+        self.grab_set()
+
+        main_frame = ttkb.Frame(self, padding=20)
+        main_frame.pack(expand=True, fill='both')
+
+        data = analysis_data
+        
+        labels = {
+            "symbol": "Símbolo:",
+            "current_price": "Preço no Momento do Alerta:",
+            "price_change_24h": "Variação em 24h:",
+            "price_change_1h": "Variação em 1h:",
+            "volume_24h": "Volume em 24h:",
+            "market_cap": "Capitalização de Mercado:",
+            "market_cap_rank": "Rank Cap. Merc.:",
+            "circulating_supply": "Supply Circulante:",
+            "total_supply": "Supply Total:",
+            "max_supply": "Supply Máximo:",
+            "rsi_value": "Valor do RSI:",
+            "bollinger_signal": "Sinal das Bandas de Bollinger:",
+            "macd_signal": "Sinal do MACD:",
+            "mme_cross": "Cruzamento de MMEs:"
+        }
+
+        row = 0
+        for key, label_text in labels.items():
+            value = data.get(key)
+            
+            if value is None: value_text = "N/A"
+            elif key == 'current_price': value_text = f"${value:,.4f}"
+            elif key in ['price_change_24h', 'price_change_1h']: value_text = f"{value:+.2f}%"
+            elif key in ['volume_24h', 'market_cap']:
+                if value >= 1_000_000_000: value_text = f"${value/1_000_000_000:,.2f}B"
+                elif value >= 1_000_000: value_text = f"${value/1_000_000:,.2f}M"
+                elif value >= 1_000: value_text = f"${value/1_000:,.2f}K"
+                else: value_text = f"${value:,.2f}"
+            elif key == 'rsi_value': value_text = f"{value:.2f}" if value is not None else "N/A"
+            elif key in ['circulating_supply', 'total_supply', 'max_supply']:
+                value_text = f"{value:,.0f}" if value is not None else "N/A" # Se for None, já mostra N/A
+            else: value_text = str(value)
+
+            ttkb.Label(main_frame, text=label_text, font=("Segoe UI", 10, "bold")).grid(row=row, column=0, sticky='w', pady=4, padx=5)
+            ttkb.Label(main_frame, text=value_text, font=("Segoe UI", 10)).grid(row=row, column=1, sticky='w', pady=4, padx=5)
+            row += 1
+            
+        main_frame.columnconfigure(1, weight=1)
+        
+        close_button = ttkb.Button(main_frame, text="Fechar", command=self.destroy, bootstyle="secondary")
+        close_button.grid(row=row, column=0, columnspan=2, pady=(20, 0))
+
+```
+
+---
+
+### 3. `monitoring_service.py` (Remoção de duplicatas, ajustes de `asyncio` e mapeamento)
+
+```python
+# monitoring_service.py
+
+import pandas as pd
+import datetime
+import time
+import os
+import json
+import asyncio
+import aiohttp
+# import winsound # REMOVIDO - A responsabilidade do som é da MainApplication/NotificationService
+import sys
+import logging # Importar logging para debug
+
+# --- IMPORTAÇÕES CORRIGIDAS ---
+from pycoingecko import CoinGeckoAPI
+# Importa as classes de robust_services.py
+from robust_services import DataCache, BinanceRateLimiter, DataValidator 
+# Importa a classe de notificação
+from notification_service import NotificationService 
+# Importa as funções de análise técnica (assumindo que está em technical_analysis.py)
+from technical_analysis import calculate_rsi, calculate_bollinger_bands, calculate_macd, calculate_emas
+# --- FIM DAS IMPORTAÇÕES CORRIGIDAS ---
+
+def get_application_path():
+    """Retorna o caminho do diretório da aplicação."""
+    if getattr(sys, 'frozen', False):
+        return os.path.dirname(sys.executable)
+    return os.path.dirname(os.path.abspath(__file__))
+
+class MonitoringService:
+    def __init__(self, notification_service, config, cg_client, data_cache_instance, rate_limiter_instance, main_app_ref=None):
+        self.notification_service = notification_service
+        self.app_config = config
+        self.cg_client = cg_client
+        self.data_cache = data_cache_instance
+        self.rate_limiter = rate_limiter_instance
+        self.main_app_ref = main_app_ref # Referência para a MainApplication
+        self.coins_data = {} # Cache de dados das moedas monitoradas
+        self.alert_history = [] # Histórico de alertas disparados
+        self.all_cg_coins_list = [] # Cache de todas as moedas da CoinGecko (informações completas)
+        self.last_full_list_fetch = None # Timestamp da última vez que a lista completa foi buscada
+
+        # Carregar ou inicializar o mapeamento de símbolos para CoinGecko IDs
+        self.coin_gecko_ids = self.app_config.get("coin_gecko_ids", {})
+        
+        # Carregar histórico de alertas ao iniciar
+        self.alert_history = self.notification_service.load_alert_history()
+
+        # Certifique-se de que a notificação de serviço tenha acesso ao mapeamento de IDs
+        self.notification_service.set_coin_gecko_ids(self.coin_gecko_ids)
+
+        # Inicia o carregamento da lista completa de moedas da CoinGecko assim que o serviço é instanciado
+        # Isso pode ser feito em uma thread separada para não bloquear a inicialização do serviço
+        if self.main_app_ref: # Verifica se a referência existe antes de agendar
+            self.main_app_ref.after(0, self._load_initial_coin_data)
+
+    def _load_initial_coin_data(self):
+        """Carrega dados iniciais (lista completa de moedas) em uma thread."""
+        self.main_app_ref.update_status("Carregando lista de moedas da CoinGecko...")
+        threading.Thread(target=self.get_all_coins_list, daemon=True).start()
+
+    async def _fetch_coin_data_async(self, cg_id, symbol_clean):
+        """
+        Busca dados de uma única moeda da CoinGecko de forma assíncrona e retorna um dicionário processado.
+        Esta função é agora mais modularizada e lida apenas com a busca e processamento básico.
+        """
+        try:
+            # Usamos run_in_executor para executar chamadas síncronas bloqueantes (CoinGeckoAPI)
+            # em um pool de threads, permitindo que o loop asyncio principal continue executando.
+            
+            # Obter Market Chart (preços históricos, volumes, market caps)
+            market_chart_data = await asyncio.get_running_loop().run_in_executor(
+                None, # Usa o ThreadPoolExecutor padrão
+                lambda: self.rate_limiter.wait_and_execute_sync(
+                    self.cg_client.get_coin_market_chart_by_id,
+                    id=cg_id,
+                    vs_currency='usd',
+                    days='7' # Busca dados dos últimos 7 dias
+                )
+            )
+            
+            # Obter Informações da Moeda (preço atual, variações, supply, etc.)
+            coin_info = await asyncio.get_running_loop().run_in_executor(
+                None, # Usa o ThreadPoolExecutor padrão
+                lambda: self.rate_limiter.wait_and_execute_sync(
+                    self.cg_client.get_coin_by_id,
+                    id=cg_id
+                )
+            )
+
+            # Processar os dados para extrair as informações necessárias
+            prices = market_chart_data.get('prices', [])
+            volumes = market_chart_data.get('total_volumes', [])
+            market_caps = market_chart_data.get('market_caps', [])
+
+            current_price = prices[-1][1] if prices else 0
+            volume_24h = volumes[-1][1] if volumes else 0
+            market_cap = market_caps[-1][1] if market_caps else 0
+
+            price_change_24h = coin_info.get('market_data', {}).get('price_change_percentage_24h', 0)
+            price_change_1h = coin_info.get('market_data', {}).get('price_change_percentage_1h_in_currency', {}).get('usd')
+
+            # Preparar DataFrame para Análise Técnica
+            df_prices = pd.DataFrame(prices, columns=['timestamp', 'close'])
+            df_prices['timestamp'] = pd.to_datetime(df_prices['timestamp'], unit='ms')
+            df_prices.set_index('timestamp', inplace=True)
+
+            # Calcular Indicadores Técnicos
+            rsi_value, _, _ = calculate_rsi(df_prices)
+            bollinger_upper, bollinger_lower, _, _ = calculate_bollinger_bands(df_prices)
+            macd_result_str = calculate_macd(df_prices) # Retorna a string de sinal (ex: "Cruzamento de Alta")
+            
+            # Para obter os valores exatos de MACD line/signal, seria necessário ajustar calculate_macd
+            # Por enquanto, usaremos a string de sinal e os valores de MME calculados abaixo.
+            macd_line_val = None 
+            signal_line_val = None
+
+            emas = calculate_emas(df_prices)
+            ema_50 = emas.get(50).iloc[-1] if 50 in emas and not emas.get(50).empty else None
+            ema_200 = emas.get(200).iloc[-1] if 200 in emas and not emas.get(200).empty else None
+
+            # Determinar o nome completo da moeda e o símbolo no formato da UI (ex: BTCUSDT)
+            symbol_for_ui = symbol_clean + 'USDT' # Assume que o símbolo limpo é um par USDT
+
+            return {
+                'symbol': symbol_clean, # Retorna o símbolo limpo (ex: BTC)
+                'symbol_ui': symbol_for_ui, # Símbolo para uso na UI (ex: BTCUSDT)
+                'current_price': current_price,
+                'price_change_24h': price_change_24h,
+                'price_change_1h': price_change_1h,
+                'volume_24h': volume_24h,
+                'market_cap': market_cap,
+                'market_cap_rank': coin_info.get('market_data', {}).get('market_cap_rank'),
+                'circulating_supply': coin_info.get('market_data', {}).get('circulating_supply'),
+                'total_supply': coin_info.get('market_data', {}).get('total_supply'),
+                'max_supply': coin_info.get('market_data', {}).get('max_supply'),
+                'rsi_value': rsi_value,
+                'bollinger_upper': bollinger_upper,
+                'bollinger_lower': bollinger_lower,
+                'macd_line': macd_line_val, # Valor numérico do MACD (atualmente None)
+                'signal_line': signal_line_val, # Valor numérico do Signal Line (atualmente None)
+                'macd_signal': macd_result_str, # String do sinal do MACD
+                'ema_50': ema_50,
+                'ema_200': ema_200,
+                'mme_cross': "Nenhum" # Será determinado em check_alerts
+            }
+
+        except Exception as e:
+            # Loga o erro e retorna None para indicar falha
+            logging.error(f"Falha ao buscar dados para ID '{cg_id}' (símbolo: {symbol_clean}): {e}")
+            if self.main_app_ref:
+                self.main_app_ref.add_alert_message(f"ERRO: Falha ao buscar dados para {symbol_clean}: {e}", "ERRO")
+            return None
+
+    def get_all_coins_list(self):
+        """
+        Obtém a lista completa de moedas da CoinGecko, atualiza o cache interno e o mapeamento de IDs.
+        Esta função é síncrona e é executada em uma thread separada.
+        """
+        # Limita a frequência de chamadas a este endpoint (a cada hora)
+        if self.last_full_list_fetch and (datetime.datetime.now() - self.last_full_list_fetch).total_seconds() < 3600:
+            logging.debug("Lista completa de moedas da CoinGecko encontrada no cache. Usando dados recentes.")
+            return self.all_cg_coins_list
+
+        logging.info("Buscando lista completa de moedas da CoinGecko...")
+        try:
+            if self.main_app_ref:
+                self.main_app_ref.update_status("Buscando lista completa de moedas da CoinGecko...")
+            
+            # Executa a chamada síncrona da CoinGeckoAPI usando o rate limiter e em um executor de thread
+            coin_list_data = self.rate_limiter.wait_and_execute_sync(self.cg_client.get_coins_list)
+
+            self.all_cg_coins_list = coin_list_data
+            
+            # Atualiza o mapeamento de símbolos para IDs da CoinGecko
+            new_coin_gecko_ids = {}
+            for coin in self.all_cg_coins_list:
+                symbol = coin.get('symbol')
+                coin_id = coin.get('id')
+                if symbol and coin_id:
+                    # Armazena o símbolo em maiúsculas (ex: BTC) como chave e o ID como valor (ex: bitcoin)
+                    new_coin_gecko_ids[symbol.upper()] = coin_id
+            
+            self.coin_gecko_ids = new_coin_gecko_ids
+            self.app_config["coin_gecko_ids"] = self.coin_gecko_ids # Atualiza a configuração global
+            self.main_app_ref.save_config() # Salva a configuração atualizada
+            self.notification_service.set_coin_gecko_ids(self.coin_gecko_ids) # Atualiza o serviço de notificação com o novo mapeamento
+            
+            self.last_full_list_fetch = datetime.datetime.now()
+            logging.info(f"Lista completa de moedas carregada. Total: {len(self.all_cg_coins_list)}. Mapeamento de IDs atualizado.")
+            
+            if self.main_app_ref:
+                self.main_app_ref.update_status(f"Lista de CoinGecko IDs carregada. Total: {len(self.all_cg_coins_list)} moedas.")
+            return self.all_cg_coins_list
+
+        except Exception as e:
+            logging.error(f"Falha ao carregar lista de moedas da CoinGecko: {e}")
+            if self.main_app_ref:
+                self.main_app_ref.add_alert_message(f"ERRO: Falha ao carregar lista de moedas da CoinGecko: {e}", "ERRO")
+            return []
+
+    def get_coin_id_by_symbol(self, symbol_ui: str) -> Optional[str]:
+        """
+        Obtém o CoinGecko ID para um determinado símbolo de UI (ex: BTCUSDT).
+        Retorna o ID da CoinGecko ou None se não encontrado.
+        """
+        # Extrai o símbolo limpo (ex: BTC) do símbolo da UI (ex: BTCUSDT)
+        clean_symbol = symbol_ui.replace('USDT', '').upper()
+        
+        # Tenta encontrar no mapeamento direto
+        if clean_symbol in self.coin_gecko_ids:
+            return self.coin_gecko_ids[clean_symbol]
+
+        # Se não encontrou, tenta recarregar a lista completa caso esteja desatualizada
+        if not self.all_cg_coins_list or (self.last_full_list_fetch and (datetime.datetime.now() - self.last_full_list_fetch).total_seconds() > 3600):
+            logging.debug("Recarregando lista completa de moedas para encontrar o ID do símbolo.")
+            self.get_all_coins_list() # Tenta recarregar em background (a lista estará pronta mais tarde)
+            # Para garantir a obtenção imediata se a lista acabou de ser carregada, podemos tentar novamente no mapeamento
+            if clean_symbol in self.coin_gecko_ids:
+                return self.coin_gecko_ids[clean_symbol]
+
+        logging.warning(f"CoinGecko ID não encontrado para o símbolo '{clean_symbol}' (derivado de '{symbol_ui}').")
+        return None
+
+    def get_coin_name_by_symbol(self, symbol_ui: str) -> str:
+        """Retorna o nome completo da moeda a partir do símbolo da UI (ex: BTCUSDT)."""
+        clean_symbol = symbol_ui.replace('USDT', '').upper()
+        
+        # Usa o mapeamento para obter o ID primeiro
+        coin_id = self.get_coin_id_by_symbol(symbol_ui)
+        if not coin_id:
+            return clean_symbol # Retorna o símbolo limpo se não encontrar o ID
+
+        # Busca o nome completo na lista completa de moedas usando o ID
+        for coin in self.all_cg_coins_list:
+            if coin.get('id') == coin_id:
+                return coin.get('name', clean_symbol) # Retorna o nome ou o símbolo limpo como fallback
+        
+        return clean_symbol # Retorna o símbolo limpo se o nome não for encontrado
+
+    def update_card_ui(self, symbol_ui: str, data: Dict):
+        """
+        Atualiza a interface do usuário (CryptoCard) com os dados mais recentes.
+        Executado na thread principal do Tkinter via `self.main_app_ref.after`.
+        """
+        card = self.main_app_ref.monitored_coins.get(symbol_ui)
+        if not card:
+            logging.warning(f"Card não encontrado para o símbolo UI '{symbol_ui}'. Não é possível atualizar a UI.")
+            return
+
+        current_price = data.get('current_price')
+        if current_price is not None:
+            # Efeito de "Live Ticker" no preço
+            if current_price > card.previous_price:
+                card.data_labels['current_price'].config(foreground="lightgreen")
+            elif current_price < card.previous_price:
+                card.data_labels['current_price'].config(foreground="red")
+            else:
+                card.data_labels['current_price'].config(foreground="white") # Cor padrão
+            card.previous_price = current_price
+            card.data_labels['current_price'].config(text=f"${current_price:,.4f}")
+        else:
+            card.data_labels['current_price'].config(text="N/A", foreground="grey")
+
+        # Variação de 24h
+        price_change_24h = data.get('price_change_24h')
+        if price_change_24h is not None:
+            color_24h = "lightgreen" if price_change_24h >= 0 else "red"
+            card.data_labels['price_change_24h'].config(text=f"{price_change_24h:+.2f}%", foreground=color_24h)
+        else:
+            card.data_labels['price_change_24h'].config(text="N/A", foreground="grey")
+
+        # Variação de 1h
+        price_change_1h = data.get('price_change_1h')
+        if price_change_1h is not None:
+            color_1h = "lightgreen" if price_change_1h >= 0 else "red"
+            card.data_labels['price_change_1h'].config(text=f"{price_change_1h:+.2f}%", foreground=color_1h)
+        else:
+            card.data_labels['price_change_1h'].config(text="N/A", foreground="grey")
+
+        # Volume (formatar para B, M, K)
+        volume_24h = data.get('volume_24h')
+        if volume_24h is not None:
+            if volume_24h >= 1_000_000_000: volume_text = f"${volume_24h/1_000_000_000:,.2f}B"
+            elif volume_24h >= 1_000_000: volume_text = f"${volume_24h/1_000_000:,.2f}M"
+            elif volume_24h >= 1_000: volume_text = f"${volume_24h/1_000:,.2f}K"
+            else: volume_text = f"${volume_24h:,.2f}"
+            card.data_labels['volume_24h'].config(text=volume_text)
+        else:
+            card.data_labels['volume_24h'].config(text="N/A")
+
+        # Market Cap (formatar para B, M, K)
+        market_cap = data.get('market_cap')
+        if market_cap is not None:
+            if market_cap >= 1_000_000_000: market_cap_text = f"${market_cap/1_000_000_000:,.2f}B"
+            elif market_cap >= 1_000_000: market_cap_text = f"${market_cap/1_000_000:,.2f}M"
+            elif market_cap >= 1_000: market_cap_text = f"${market_cap/1_000:,.2f}K"
+            else: market_cap_text = f"${market_cap:,.2f}"
+            card.data_labels['market_cap'].config(text=market_cap_text)
+        else:
+            card.data_labels['market_cap'].config(text="N/A")
+
+        card.data_labels['market_cap_rank'].config(text=f"#{data['market_cap_rank']}" if data.get('market_cap_rank') is not None else "--")
+
+        # Supplys
+        circulating_supply = data.get('circulating_supply')
+        card.data_labels['circulating_supply'].config(text=f"{circulating_supply:,.0f}" if circulating_supply is not None else "N/A")
+        total_supply = data.get('total_supply')
+        card.data_labels['total_supply'].config(text=f"{total_supply:,.0f}" if total_supply is not None else "N/A")
+        max_supply = data.get('max_supply')
+        card.data_labels['max_supply'].config(text=f"{max_supply:,.0f}" if max_supply is not None else "--") # Usa "--" para max_supply se for None
+
+        # Indicadores TA
+        rsi_value = data.get('rsi_value')
+        card.data_labels['rsi_signal'].config(text=f"{rsi_value:.2f}" if rsi_value is not None else "--")
+        
+        bollinger_signal = "N/A"
+        if data.get('bollinger_upper') is not None and data.get('bollinger_lower') is not None and current_price is not None:
+            if current_price > data['bollinger_upper']: bollinger_signal = "Acima Banda Superior"
+            elif current_price < data['bollinger_lower']: bollinger_signal = "Abaixo Banda Inferior"
+            else: bollinger_signal = "Entre Bandas"
+        card.data_labels['bollinger_signal'].config(text=bollinger_signal)
+        
+        macd_signal_str = data.get('macd_signal', 'N/A') # String como "Cruzamento de Alta"
+        card.data_labels['macd_signal'].config(text=macd_signal_str)
+        
+        mme_cross = "N/A"
+        if data.get('ema_50') is not None and data.get('ema_200') is not None:
+            if data['ema_50'] > data['ema_200']: mme_cross = "Cruz Dourada"
+            else: mme_cross = "Cruz da Morte"
+        card.data_labels['mme_cross'].config(text=mme_cross)
+
+    async def run_monitoring_cycle_async(self):
+        """
+        Executa um ciclo completo de monitoramento de forma assíncrona:
+        1. Busca dados para as moedas configuradas.
+        2. Atualiza a UI para cada moeda.
+        3. Verifica condições de alerta.
+        """
+        if not self.main_app_ref or not self.main_app_ref.monitoring_active:
+            logging.debug("Monitoramento não está ativo. Pulando ciclo.")
+            return
+        
+        self.main_app_ref.update_status("Atualizando dados...")
+        
+        cryptos_to_monitor_configs = self.app_config.get("cryptos_to_monitor", [])
+        
+        # Tarefas assíncronas para buscar dados de cada moeda
+        fetch_tasks = []
+        for crypto_config in cryptos_to_monitor_configs:
+            symbol_ui = crypto_config.get('symbol') # Símbolo no formato UI (ex: BTCUSDT)
+            if not symbol_ui: continue
+
+            coin_id = self.get_coin_id_by_symbol(symbol_ui)
+            if not coin_id:
+                logging.warning(f"CoinGecko ID não encontrado para {symbol_ui}. Pulando.")
+                continue
+            
+            # Adiciona a tarefa assíncrona para buscar e processar os dados da moeda
+            fetch_tasks.append(self._fetch_coin_data_async(coin_id, symbol_ui.replace('USDT', '').upper()))
+
+        # Executa todas as tarefas de busca de dados em paralelo
+        results = await asyncio.gather(*fetch_tasks)
+        
+        # Processar os resultados de volta na thread principal do Tkinter
+        for data in results:
+            if data:
+                symbol_ui = data['symbol_ui'] # Pega o símbolo no formato UI (ex: BTCUSDT)
+                self.coins_data[symbol_ui] = data # Atualiza o cache interno de dados
+                
+                # Atualiza a UI na thread principal
+                self.main_app_ref.after(0, self.update_card_ui, symbol_ui, data)
+                
+                # Verifica alertas na thread principal
+                self.main_app_ref.after(0, self.check_alerts, symbol_ui, data)
+        
+        self.main_app_ref.update_status("Dados atualizados. Verificando alertas.")
+
+    def run_monitoring_cycle(self):
+        """
+        Método síncrono que inicia o ciclo assíncrono.
+        Usado para ser chamado por threads ou pelo `after` do Tkinter.
+        """
+        if not self.main_app_ref or not self.main_app_ref.monitoring_active:
+            logging.debug("Monitoramento não está ativo. Ignorando chamada para run_monitoring_cycle.")
+            return
+
+        try:
+            # Cria um novo loop de eventos asyncio para executar o ciclo assíncrono.
+            # Isso é necessário porque este método pode ser chamado de uma thread síncrona
+            # que não possui um loop de eventos asyncio em execução.
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(self.run_monitoring_cycle_async())
+            loop.close()
+            asyncio.set_event_loop(None) # Limpa o loop de eventos global
+            
+        except Exception as e:
+            logging.error(f"Erro ao executar ciclo de monitoramento: {e}")
+            if self.main_app_ref:
+                self.main_app_ref.add_alert_message(f"ERRO ao executar ciclo de monitoramento: {e}", "ERRO")
+
+    def check_alerts(self, symbol_ui: str, current_data: Dict):
+        """
+        Verifica se as condições de alerta configuradas para uma moeda foram atingidas.
+        Executado na thread principal do Tkinter.
+        """
+        alert_config = None
+        for crypto_config in self.app_config.get("cryptos_to_monitor", []):
+            if crypto_config.get('symbol') == symbol_ui:
+                alert_config = crypto_config.get('alert_config')
+                break
+
+        if not alert_config: return
+
+        conditions = alert_config.get('conditions', {})
+        triggered_conditions = alert_config.get('triggered_conditions', [])
+        
+        # Extrai dados necessários para as verificações
+        current_price = current_data.get('current_price')
+        rsi_value = current_data.get('rsi_value')
+        bollinger_upper = current_data.get('bollinger_upper')
+        bollinger_lower = current_data.get('bollinger_lower')
+        macd_signal_str = current_data.get('macd_signal') # String como "Cruzamento de Alta"
+        ema_50 = current_data.get('ema_50')
+        ema_200 = current_data.get('ema_200')
+        total_volume = current_data.get('volume_24h')
+        market_cap = current_data.get('market_cap')
+        price_change_24h = current_data.get('price_change_24h')
+
+        # Mapeamento para nomes de exibição amigáveis
+        display_names = {
+            'preco_baixo': 'Preço Abaixo', 'preco_alto': 'Preço Acima',
+            'rsi_sobrevendido': 'RSI Sobrevendido', 'rsi_sobrecomprado': 'RSI Sobrecomprado',
+            'bollinger_abaixo': 'Bollinger Abaixo', 'bollinger_acima': 'Bollinger Acima',
+            'macd_cruz_baixa': 'MACD Cruz Baixa', 'macd_cruz_alta': 'MACD Cruz Alta',
+            'mme_cruz_morte': 'MME Cruz Morte', 'mme_cruz_dourada': 'MME Cruz Dourada',
+            'fuga_capital_significativa': 'Fuga de Capital Significativa',
+            'entrada_capital_significativa': 'Entrada de Capital Significativa'
+        }
+
+        # Verifica cada condição habilitada
+        for cond_key, cond_details in conditions.items():
+            if cond_details.get('enabled'):
+                alert_triggered = False
+                alert_message = ""
+                
+                # --- Lógica de Verificação de Alertas ---
+                if cond_key == 'preco_baixo' and current_price is not None and current_price < cond_details.get('value', 0.0):
+                    alert_triggered = True
+                    alert_message = f"Preço de {symbol_ui.replace('USDT','')} (${current_price:,.4f}) abaixo de ${cond_details['value']:,.4f}."
+                
+                elif cond_key == 'preco_alto' and current_price is not None and current_price > cond_details.get('value', 0.0):
+                    alert_triggered = True
+                    alert_message = f"Preço de {symbol_ui.replace('USDT','')} (${current_price:,.4f}) acima de ${cond_details['value']:,.4f}."
+                
+                elif cond_key == 'rsi_sobrevendido' and rsi_value is not None and rsi_value <= cond_details.get('value', 0.0):
+                    alert_triggered = True
+                    alert_message = f"RSI de {symbol_ui.replace('USDT','')}: {rsi_value:.2f} <= {cond_details['value']:.2f} (Sobrevendido)."
+                
+                elif cond_key == 'rsi_sobrecomprado' and rsi_value is not None and rsi_value >= cond_details.get('value', 0.0):
+                    alert_triggered = True
+                    alert_message = f"RSI de {symbol_ui.replace('USDT','')}: {rsi_value:.2f} >= {cond_details['value']:.2f} (Sobrecomprado)."
+                
+                elif cond_key == 'bollinger_abaixo' and bollinger_lower is not None and current_price is not None and current_price < bollinger_lower:
+                    alert_triggered = True
+                    alert_message = f"Preço de {symbol_ui.replace('USDT','')} (${current_price:,.4f}) abaixo da Banda Inferior de Bollinger (${bollinger_lower:,.4f})."
+                
+                elif cond_key == 'bollinger_acima' and bollinger_upper is not None and current_price is not None and current_price > bollinger_upper:
+                    alert_triggered = True
+                    alert_message = f"Preço de {symbol_ui.replace('USDT','')} (${current_price:,.4f}) acima da Banda Superior de Bollinger (${bollinger_upper:,.4f})."
+                
+                elif cond_key == 'macd_cruz_baixa' and macd_signal_str == "Cruzamento de Baixa":
+                    alert_triggered = True
+                    alert_message = f"MACD de {symbol_ui.replace('USDT','')}: Cruzamento de Baixa Detectado."
+                
+                elif cond_key == 'macd_cruz_alta' and macd_signal_str == "Cruzamento de Alta":
+                    alert_triggered = True
+                    alert_message = f"MACD de {symbol_ui.replace('USDT','')}: Cruzamento de Alta Detectado."
+                
+                elif cond_key == 'mme_cruz_morte' and ema_50 is not None and ema_200 is not None and ema_50 < ema_200:
+                    alert_triggered = True
+                    alert_message = f"MME 50 vs 200 de {symbol_ui.replace('USDT','')}: Cruz da Morte ({ema_50:,.2f} < {ema_200:,.2f})."
+                
+                elif cond_key == 'mme_cruz_dourada' and ema_50 is not None and ema_200 is not None and ema_50 > ema_200:
+                    alert_triggered = True
+                    alert_message = f"MME 50 vs 200 de {symbol_ui.replace('USDT','')}: Cruz Dourada ({ema_50:,.2f} > {ema_200:,.2f})."
+
+                # Lógica para Fuga e Entrada de Capital Significativa
+                elif (cond_key == 'fuga_capital_significativa' or cond_key == 'entrada_capital_significativa') and \
+                     total_volume is not None and market_cap is not None and market_cap > 0 and price_change_24h is not None:
+                    try:
+                        vol_pct_str, price_var_pct_str = str(cond_details.get('value', '0,0')).split(',')
+                        vol_threshold_percent = float(vol_pct_str.strip())
+                        price_change_threshold_percent = float(price_var_pct_str.strip())
+                        
+                        current_volume_percentage_of_mcap = (total_volume / market_cap) * 100
+                        
+                        if cond_key == 'fuga_capital_significativa':
+                            if current_volume_percentage_of_mcap > vol_threshold_percent and price_change_24h < price_change_threshold_percent:
+                                alert_triggered = True
+                                alert_message = (f"Fuga de Capital em {symbol_ui.replace('USDT','')}: Vol({current_volume_percentage_of_mcap:.2f}%) > Limite({vol_threshold_percent:.0f}%) "
+                                                 f"e Variação({price_change_24h:+.2f}%) < Limite({price_change_threshold_percent:.1f}%).")
+                        elif cond_key == 'entrada_capital_significativa':
+                            if current_volume_percentage_of_mcap > vol_threshold_percent and price_change_24h > price_change_threshold_percent:
+                                alert_triggered = True
+                                alert_message = (f"Entrada de Capital em {symbol_ui.replace('USDT','')}: Vol({current_volume_percentage_of_mcap:.2f}%) > Limite({vol_threshold_percent:.0f}%) "
+                                                 f"e Variação({price_change_24h:+.2f}%) > Limite({price_change_threshold_percent:.1f}%).")
+                    except (ValueError, TypeError) as e:
+                        logging.warning(f"Configuração inválida para '{cond_key}' para {symbol_ui}: {e}")
+                        if self.main_app_ref:
+                            self.main_app_ref.add_alert_message(f"AVISO: Configuração inválida para '{cond_key}' para {symbol_ui}: {e}", "AVISO")
+
+                # --- Notificação e Atualização de Estado ---
+                if alert_triggered and cond_key not in triggered_conditions:
+                    logging.info(f"ALERTA DISPARADO: {alert_message}")
+                    # Envia o alerta (usa o método show_alert que inclui o dado completo)
+                    self.notification_service.show_alert( 
+                        coin_symbol=symbol_ui, 
+                        alert_type=display_names.get(cond_key, cond_key.replace('_', ' ').title()),
+                        details=alert_message,
+                        sound_path=alert_config.get('sound', 'sons/Alerta.wav'),
+                        data=current_data # Passa os dados completos para o histórico/análise
+                    )
+                    triggered_conditions.append(cond_key) # Marca como disparado
+                    
+                elif not alert_triggered and cond_key in triggered_conditions:
+                    logging.debug(f"Condição '{cond_key}' para {symbol_ui} não é mais atendida. Removendo de disparados.")
+                    triggered_conditions.remove(cond_key) # Remove de disparados se a condição não for mais atendida
+        
+        # Atualiza a lista de 'triggered_conditions' na configuração da moeda e salva se houver mudanças
+        # Isso é feito apenas uma vez por moeda no final do loop de verificação de alertas
+        updated_config_found = False
+        for i, crypto_config in enumerate(self.app_config.get("cryptos_to_monitor", [])):
+            if crypto_config.get('symbol') == symbol_ui:
+                if crypto_config.get('alert_config', {}).get('triggered_conditions') != triggered_conditions:
+                    self.app_config["cryptos_to_monitor"][i]['alert_config']['triggered_conditions'] = triggered_conditions
+                    updated_config_found = True
+                break # Sai do loop assim que encontrar a moeda
+        
+        if updated_config_found:
+            self.main_app_ref.save_config() # Salva as alterações na configuração
+
+
+```
+
+---
+
+### 4. `main_app.py` (Ajuste de Imports e Passagem de Referências)
+
+```python
+# main_app.py
+
+import tkinter as tk
+from tkinter import ttk, scrolledtext, messagebox
+import ttkbootstrap as ttkb
+import datetime
+import json
+import os
+import threading
+import logging # Importar logging para debug
+
+# --- IMPORTAÇÕES CORRIGIDAS ---
+# Importa os serviços de forma absoluta, assumindo que estão na raiz do projeto ou em um pacote 'services'
+# Se estiverem em um subdiretório, ajuste o caminho (ex: from services.notification_service import NotificationService)
+from notification_service import NotificationService
+from robust_services import DataCache, BinanceRateLimiter
+from pycoingecko import CoinGeckoAPI
+# Importa o MonitoringService de seu próprio arquivo
+from monitoring_service import MonitoringService 
+# Importa os componentes da UI de seu próprio arquivo
+from core_components import (CryptoCard, AlertConfigDialog, AlertHistoryWindow, AlertManagerWindow, StartupConfigDialog) 
+# Importa as janelas Toplevel
+from api_config_window import ApiConfigWindow
+from capital_flow_window import CapitalFlowWindow
+from token_movers_window import TokenMoversWindow
+from help_window import HelpWindow 
+from support_material_window import SupportMaterialWindow 
+from market_analysis_config_window import MarketAnalysisConfigWindow 
+# --- FIM DAS IMPORTAÇÕES CORRIGIDAS ---
+
+class MainApplication(ttkb.Window):
+    def __init__(self):
+        super().__init__(themename="superhero")
+
+        # Configuração inicial de estilos do ttkbootstrap
+        self.style.configure('TFrame', background="#23272b")
+        self.style.configure('TLabel', background="#23272b", foreground=self.style.colors.fg)
+        self.style.configure('TLabelframe', background="#23272b", bordercolor=self.style.colors.primary, relief="solid", borderwidth=1)
+        self.style.configure('TLabelframe.Label', background="#23272b", foreground=self.style.colors.primary)
+        self.style.configure('TButton', font=("Helvetica", 10, "bold"))
+        self.style.configure('Treeview.Heading', font=("Helvetica", 10, "bold"))
+        self.style.map('Treeview', background=[('selected', self.style.colors.primary)], foreground=[('selected', 'white')])
+
+        self.title("Monitor de Criptomoedas")
+        self.state('zoomed') # Maximiza a janela
+        self.resizable(True, True)
+
+        # Constantes de layout e fontes
+        self.PAD_X = 15
+        self.PAD_Y = 10
+        self.FONT_LABEL = ("Helvetica", 10)
+        self.FONT_ALERT = ("Consolas", 9)
+
+        # Variáveis de Controle e Estado
+        self.monitoring_active = False
+        self.countdown_id = None # ID do timer de contagem regressiva
+        self.update_data_job_id = None # ID do timer de atualização de dados
+        self.monitored_coins = {} # Dicionário para armazenar os widgets CryptoCard {symbol_ui: card_widget}
+        
+        # Carregar configurações do config.json ANTES de inicializar serviços que dependem delas
+        self.app_config = self._load_config()
+        self.update_interval_seconds = self.app_config.get("check_interval_seconds", 300) # Intervalo padrão de 5 minutos
+        self.remaining_time = self.update_interval_seconds # Tempo restante para a próxima atualização
+
+        # Instâncias de Serviços Essenciais
+        self.notification_service = NotificationService(main_app_instance=self)
+        self.alert_history = self.notification_service.load_alert_history() # Carrega histórico de alertas ao iniciar
+        self.cg_client = CoinGeckoAPI() # Cliente para a API CoinGecko
+        self.data_cache = DataCache() # Cache para dados de API
+        self.rate_limiter = BinanceRateLimiter() # Gerenciador de limites de requisição
+
+        # Instanciar MonitoringService APÓS carregar todas as dependências necessárias
+        self.monitoring_service = MonitoringService(
+            notification_service=self.notification_service,
+            config=self.app_config, # Passa as configurações carregadas
+            cg_client=self.cg_client,
+            data_cache_instance=self.data_cache,
+            rate_limiter_instance=self.rate_limiter,
+            main_app_ref=self # Passa uma referência à própria instância da MainApplication
+        )
+        
+        # Lista que armazenará todos os símbolos/IDs de moedas da CoinGecko após a carga inicial
+        self.all_cg_symbols_list = [] 
+        
+        # Cria os widgets da interface gráfica
+        self._create_widgets()
+        
+        # Inicia o carregamento dos dados iniciais (lista de moedas da CG) em uma thread separada
+        # para não bloquear a renderização da janela principal.
+        threading.Thread(target=self._initialize_data, daemon=True).start()
+
+    def _load_config(self) -> dict:
+        """Carrega as configurações do arquivo config.json."""
+        config_path = os.path.join(os.path.dirname(__file__), "config.json")
+        try:
+            if os.path.exists(config_path) and os.path.getsize(config_path) > 0:
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+            else:
+                # Retorna configuração padrão se o arquivo não existe ou está vazio
+                logging.warning("Arquivo config.json não encontrado ou vazio. Usando configuração padrão.")
+                return self._get_default_app_config()
+        except (FileNotFoundError, json.JSONDecodeError) as e:
+            logging.error(f"Erro ao carregar config.json: {e}. Usando configuração padrão.")
+            messagebox.showerror("Erro ao Carregar Config", f"Erro ao carregar config.json: {e}. Usando configuração padrão.")
+            return self._get_default_app_config()
+        except Exception as e:
+            logging.error(f"Erro inesperado ao carregar config.json: {e}. Usando configuração padrão.")
+            messagebox.showerror("Erro Inesperado", f"Erro inesperado ao carregar config.json: {e}. Usando configuração padrão.")
+            return self._get_default_app_config()
+
+    def _get_default_app_config(self) -> dict:
+        """Retorna a estrutura de configuração padrão para a aplicação."""
+        return {
+            "telegram_bot_token": "SEU_TOKEN_AQUI",
+            "telegram_chat_id": "SEU_CHAT_ID_AQUI",
+            "check_interval_seconds": 300, # Intervalo padrão de 5 minutos
+            "bitquery_api_key": "", # Chave API Bitquery (se utilizada)
+            "market_analysis_config": {"top_n": 25, "min_market_cap": 50000000},
+            "cryptos_to_monitor": [], # Lista de moedas a monitorar, cada item com 'symbol' e 'alert_config'
+            "coin_gecko_ids": {} # Mapeamento de símbolo (ex: BTC) para ID CoinGecko (ex: bitcoin)
+        }
+
+    def save_config(self):
+        """Salva as configurações atuais no arquivo config.json."""
+        config_path = os.path.join(os.path.dirname(__file__), "config.json")
+        try:
+            with open(config_path, 'w', encoding='utf-8') as f:
+                json.dump(self.app_config, f, indent=4, ensure_ascii=False)
+            logging.info("Configurações salvas com sucesso.")
+        except Exception as e:
+            logging.error(f"Falha ao salvar config.json: {e}")
+            messagebox.showerror("Erro ao Salvar", f"Não foi possível salvar 'config.json':\n{e}")
+
+    def _create_widgets(self):
+        """Configura a interface gráfica principal."""
+        self.withdraw() # Esconde a janela principal temporariamente até que os dados iniciais sejam carregados
+
+        # --- Menu Principal ---
+        menubar = tk.Menu(self)
+        self.config(menu=menubar)   
+
+        analysis_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="Análises", menu=analysis_menu)
+        analysis_menu.add_command(label="Análise de Fluxo de Capital", command=self._open_capital_flow_window)
+        analysis_menu.add_command(label="Análise de Ganhadores/Perdedores", command=self._open_token_movers_window)
+        analysis_menu.add_command(label="Configurações de Análise de Mercado", command=self._open_market_analysis_config_window)
+
+        config_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="Configurações", menu=config_menu)
+        config_menu.add_command(label="Gerenciar Alertas por Moeda", command=self.open_alert_manager)
+        config_menu.add_command(label="Configurações Gerais e API", command=self._open_api_config_window)
+        
+        help_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="Ajuda", menu=help_menu)
+        help_menu.add_command(label="Guia de Indicadores", command=lambda: HelpWindow(parent_app=self)) # Passa 'self' como parent_app
+        help_menu.add_command(label="Material de Apoio (Filosofia)", command=lambda: SupportMaterialWindow(parent_app=self)) # Passa 'self' como parent_app
+        help_menu.add_command(label="Ver Histórico de Alertas", command=lambda: AlertHistoryWindow(parent_app=self)) # Passa 'self' como parent_app
+
+        # --- Frame Principal ---
+        main_frame = ttk.Frame(self, padding=self.PAD_X)
+        main_frame.pack(expand=True, fill='both')
+        # Configura o grid para que a linha dos cards expanda verticalmente
+        main_frame.grid_rowconfigure(1, weight=1) 
+        main_frame.grid_columnconfigure(0, weight=1)
+
+        # --- Painel de Controle (Topo) ---
+        control_panel = self._create_control_panel(main_frame)
+        control_panel.grid(row=0, column=0, sticky="ew", pady=(0, self.PAD_Y))
+
+        # --- Container dos Cards (Centro) ---
+        cards_container = ttkb.Frame(main_frame) # Usar ttkb.Frame para consistência de estilo
+        cards_container.grid(row=1, column=0, sticky="nsew")
+        # Configura o grid dentro do container para que o canvas expanda
+        cards_container.grid_rowconfigure(0, weight=1)
+        cards_container.grid_columnconfigure(0, weight=1)
+
+        self.cards_canvas = tk.Canvas(cards_container, background="#23272b", highlightthickness=0)
+        scrollbar = ttkb.Scrollbar(cards_container, orient="vertical", command=self.cards_canvas.yview, bootstyle="round-dark")
+        self.cards_canvas.configure(yscrollcommand=scrollbar.set)
+        
+        scrollbar.grid(row=0, column=1, sticky='ns')
+        self.cards_canvas.grid(row=0, column=0, sticky='nsew')
+
+        self.cards_frame_inner = ttkb.Frame(self.cards_canvas, padding=5)
+        self.cards_frame_window = self.cards_canvas.create_window((0, 0), window=self.cards_frame_inner, anchor="nw")
+        
+        # Bindings para o scroll do canvas
+        self.cards_frame_inner.bind("<Configure>", lambda e: self.cards_canvas.configure(scrollregion=self.cards_canvas.bbox("all")))
+        self.cards_canvas.bind("<Configure>", lambda e: self.cards_canvas.itemconfig(self.cards_frame_window, width=e.width))
+
+        # --- Log de Alertas (Abaixo dos cards) ---
+        alert_log_frame = ttkb.LabelFrame(main_frame, text="Log de Alertas", padding=10)
+        alert_log_frame.grid(row=2, column=0, sticky="nsew", pady=(self.PAD_Y, 0))
+        
+        self.alert_log_text = scrolledtext.ScrolledText(alert_log_frame, wrap='word', font=self.FONT_ALERT,
+                                                        bg="#2a2a2a", fg="white", insertbackground="white",
+                                                        state='disabled', height=8) # Altura inicial
+        self.alert_log_text.pack(expand=True, fill='both')
+        # Configurar tags para cores no log
+        self.alert_log_text.tag_config("info", foreground="lightblue")
+        self.alert_log_text.tag_config("warning", foreground="orange")
+        self.alert_log_text.tag_config("error", foreground="red")
+        self.alert_log_text.tag_config("success", foreground="lightgreen")
+
+        # --- Status Bar (Rodapé) ---
+        self.status_bar = ttkb.Label(self, text="Pronto.", padding=(10, 5), bootstyle="inverse-dark")
+        self.status_bar.pack(side="bottom", fill="x")
+
+    def _initialize_data(self):
+        """
+        Carrega dados iniciais (lista completa de moedas da CoinGecko) em uma thread.
+        Isso é feito para não bloquear a UI principal durante o carregamento.
+        """
+        try:
+            # Chama o método do MonitoringService para carregar a lista completa de IDs/símbolos
+            # Este método já cuida do cache e da thread interna.
+            self.monitoring_service.get_all_coins_list() # Executa o carregamento inicial
+            # Uma vez que a lista completa é carregada (ou uma tentativa é feita),
+            # atualizamos a lista de símbolos que a MainApplication pode usar.
+            # O MonitoringService atualiza seu próprio cache e o mapeamento de IDs.
+            self.all_cg_symbols_list = sorted([coin.get('symbol') for coin in self.monitoring_service.all_cg_coins_list if coin.get('symbol')])
+            
+            self.update_status(f"Dados da CoinGecko carregados. {len(self.all_cg_symbols_list)} moedas disponíveis.")
+            
+            # Reexibe a janela principal e atualiza os cards
+            self.after(0, self.deiconify) # Torna a janela visível
+            self.after(0, self.update_coin_cards_display) # Carrega os cards das moedas monitoradas existentes
+            
+            # Se nenhuma moeda estiver configurada, abre a janela de configuração inicial
+            if not self.app_config.get("cryptos_to_monitor"):
+                self.after(0, self._open_startup_config_dialog)
+
+        except Exception as e:
+            logging.error(f"Erro ao inicializar dados: {e}")
+            self.update_status(f"Erro ao carregar dados: {e}")
+            self.after(0, self.deiconify) # Garante que a janela apareça mesmo com erro
+
+    def _open_startup_config_dialog(self):
+        """Abre a janela de configuração inicial se nenhuma moeda estiver sendo monitorada."""
+        # Passa 'self' (a instância da MainApplication) como parent para StartupConfigDialog
+        dialog = StartupConfigDialog(parent=self, all_symbols_list=self.all_cg_symbols_list, config=self.app_config)
+        self.wait_window(dialog) # Espera a janela de diálogo fechar
+        # Após fechar, verifica se a sessão foi iniciada e atualiza o estado
+        if dialog.session_started:
+            self.update_interval_seconds = self.app_config.get("check_interval_seconds", 300)
+            self.update_coin_cards_display() # Atualiza os cards com as novas moedas
+            self.start_monitoring() # Inicia o monitoramento
+
+    def start_monitoring(self):
+        """Inicia o processo de monitoramento."""
+        if not self.app_config.get("cryptos_to_monitor"):
+            messagebox.showwarning("Aviso", "Nenhuma moeda configurada para monitoramento.\nUse o menu 'Configurações > Gerenciar Alertas'.")
+            return
+
+        self.monitoring_active = True
+        self.start_button.config(state="disabled", bootstyle="info") # Altera o estado e estilo do botão
+        self.stop_button.config(state="normal", bootstyle="danger")
+        self.update_status("Monitoramento iniciado.")
+        
+        self.remaining_time = self.update_interval_seconds # Reinicia o contador
+        self.update_countdown() # Inicia a contagem regressiva
+        self.schedule_data_update() # Agenda a primeira atualização de dados
+
+    def _create_control_panel(self, parent):
+        """Cria e retorna o painel de controle no topo da janela principal."""
+        frame = ttk.Frame(parent, padding=(self.PAD_X, 0))
+        frame.grid_columnconfigure(0, weight=1) # Coluna dos botões expande
+        frame.grid_columnconfigure(1, weight=1) # Coluna do contador expande
+
+        button_frame = ttk.Frame(frame)
+        button_frame.grid(row=0, column=0, sticky="w", pady=5)
+
+        self.start_button = ttkb.Button(button_frame, text="▶ Iniciar Monitoramento", command=self.start_monitoring, bootstyle="success")
+        self.start_button.pack(side="left", padx=5)
+
+        self.stop_button = ttkb.Button(button_frame, text="■ Parar Monitoramento", command=self.stop_monitoring, bootstyle="danger", state="disabled")
+        self.stop_button.pack(side="left", padx=5)
+        
+        self.next_update_label = ttkb.Label(frame, text="Próxima atualização em: --:--", font=self.FONT_LABEL)
+        self.next_update_label.grid(row=0, column=1, sticky="e", pady=5)
+        
+        return frame
+    
+    def stop_monitoring(self):
+        """Para o processo de monitoramento."""
+        self.monitoring_active = False
+        self.start_button.config(state="normal", bootstyle="success") # Volta ao estado normal
+        self.stop_button.config(state="disabled", bootstyle="danger")
+        self.update_status("Monitoramento parado.")
+        
+        # Cancela os timers de contagem regressiva e atualização
+        if self.countdown_id:
+            self.after_cancel(self.countdown_id)
+            self.countdown_id = None
+        if self.update_data_job_id:
+            self.after_cancel(self.update_data_job_id)
+            self.update_data_job_id = None
+            
+        self.next_update_label.config(text="Próxima atualização em: --:--")
+
+    def schedule_data_update(self):
+        """Agenda a próxima execução do ciclo de monitoramento."""
+        if not self.monitoring_active:
+            return
+            
+        # Executa o ciclo de monitoramento em uma thread separada para não bloquear a UI
+        threading.Thread(target=self.monitoring_service.run_monitoring_cycle, daemon=True).start()
+        
+        # Agenda a próxima chamada
+        self.update_data_job_id = self.after(self.update_interval_seconds * 1000, self.schedule_data_update)
+
+    def update_countdown(self):
+        """Atualiza o contador regressivo na barra de status."""
+        if not self.monitoring_active:
+            return
+
+        if self.remaining_time <= 0:
+            self.remaining_time = self.update_interval_seconds # Reinicia o contador
+        
+        minutes, seconds = divmod(self.remaining_time, 60)
+        self.next_update_label.config(text=f"Próxima atualização em: {minutes:02d}:{seconds:02d}")
+        self.remaining_time -= 1
+        
+        # Agenda a próxima atualização do contador
+        self.countdown_id = self.after(1000, self.update_countdown)
+
+    def update_coin_cards_display(self):
+        """Recria os widgets CryptoCard na tela com base nas moedas monitoradas na configuração."""
+        # Limpa os cards existentes
+        for widget in self.cards_frame_inner.winfo_children():
+            widget.destroy()
+        
+        self.monitored_coins.clear() # Limpa o dicionário de referência aos cards
+        
+        monitored_list = self.app_config.get("cryptos_to_monitor", [])
+
+        if not monitored_list:
+            # Exibe uma mensagem se nenhuma moeda estiver sendo monitorada
+            ttkb.Label(self.cards_frame_inner, text="Nenhuma moeda sendo monitorada.\nAdicione moedas no menu 'Configurações > Gerenciar Alertas'.", 
+                      font=("Helvetica", 14, "italic"), bootstyle="secondary").pack(pady=50)
+            return
+
+        # Determina a quantidade de colunas com base na largura disponível e no tamanho mínimo de um card
+        canvas_width = self.cards_canvas.winfo_width()
+        if canvas_width <= 1: # Se a largura do canvas ainda não foi calculada
+            canvas_width = self.winfo_width() - (self.PAD_X * 2) # Estima a largura da janela principal
+            if canvas_width <= 1: canvas_width = 800 # Valor fallback seguro
+        
+        card_min_width = 380 + 20 # Largura aproximada de um card + padding horizontal
+        num_cols = max(1, canvas_width // card_min_width)
+        
+        # Cria os cards para cada moeda monitorada
+        for i, crypto_config in enumerate(monitored_list):
+            symbol_ui = crypto_config.get("symbol") # Ex: BTCUSDT
+            if not symbol_ui: continue
+
+            # Obtém o nome completo da moeda usando o MonitoringService
+            coin_name = self.monitoring_service.get_coin_name_by_symbol(symbol_ui) 
+            # Obtém o endereço do contrato, se configurado
+            contract_address = crypto_config.get('alert_config', {}).get('contract_address', '')
+            
+            # Cria o widget CryptoCard
+            card = CryptoCard(self.cards_frame_inner, symbol_ui.replace('USDT',''), coin_name, contract_address) # Usa símbolo limpo para o card
+            
+            # Posiciona o card na grade
+            row, col = divmod(i, num_cols)
+            card.grid(row=row, column=col, padx=10, pady=10, sticky="nsew")
+            self.cards_frame_inner.grid_columnconfigure(col, weight=1) # Permite que as colunas expandam
+            
+            self.monitored_coins[symbol_ui] = card # Armazena a referência do card
+
+        self.cards_frame_inner.update_idletasks() # Garante que o layout seja atualizado
+        self.cards_canvas.config(scrollregion=self.cards_canvas.bbox("all")) # Ajusta a região de scroll do canvas
+
+    def update_status(self, message: str):
+        """Atualiza a mensagem na barra de status do rodapé."""
+        self.status_bar.config(text=message)
+
+    def add_alert_message(self, message: str, alert_type: str="INFO"):
+        """Adiciona uma mensagem ao log de alertas na interface gráfica."""
+        self.alert_log_text.config(state='normal') # Habilita a edição temporariamente
+        
+        # Define a cor da tag baseada no tipo de alerta
+        color_tag = "info" # Padrão
+        if "ERRO" in alert_type.upper() or "FALHA" in alert_type.upper():
+            color_tag = "error"
+        elif "AVISO" in alert_type.upper(): # Use "AVISO" em vez de "WARNING" para consistência
+            color_tag = "warning"
+        elif "SUCESSO" in alert_type.upper():
+            color_tag = "success"
+
+        self.alert_log_text.insert(tk.END, message + "\n", color_tag)
+        self.alert_log_text.see(tk.END) # Rola o texto para mostrar a última linha
+        self.alert_log_text.config(state='disabled') # Desabilita a edição novamente
+
+    # --- Métodos para Abrir Janelas Toplevel ---
+    def _open_api_config_window(self):
+        """Abre a janela de configuração de API e gerais."""
+        # Passa 'self' (a instância da MainApplication) como master e parent_app
+        ApiConfigWindow(master=self, parent_app=self)
+
+    def _open_capital_flow_window(self):
+        """Abre a janela de análise de fluxo de capital."""
+        try:
+            import capital_flow # Garante que o módulo existe antes de tentar abri-lo
+        except ImportError:
+            messagebox.showerror("Erro de Módulo", "O arquivo 'capital_flow.py' não foi encontrado ou não pôde ser importado.")
+            return
+
+        # Passa todas as dependências e a referência para MainApplication
+        CapitalFlowWindow(
+            master=self, 
+            cg_client=self.cg_client,
+            data_cache_instance=self.data_cache,
+            rate_limiter_instance=self.rate_limiter,
+            parent_app=self # Referência para MainApplication
+        )
+
+    def _open_token_movers_window(self):
+        """Abre a janela de análise de ganhadores e perdedores de tokens."""
+        # Passa todas as dependências e a referência para MainApplication
+        TokenMoversWindow(
+            master=self, 
+            cg_client=self.cg_client,
+            data_cache_instance=self.data_cache,
+            rate_limiter_instance=self.rate_limiter,
+            parent_app=self # Referência para MainApplication
+        )
+
+    def _open_market_analysis_config_window(self):
+        """Abre a janela de configurações da análise de mercado."""
+        MarketAnalysisConfigWindow(parent_app=self) # Passa a referência para MainApplication
+
+    def open_alert_manager(self):
+        """Abre a janela para gerenciar alertas por moeda."""
+        # Passa 'self' (a instância da MainApplication) como parent_app
+        manager = AlertManagerWindow(parent_app=self)
+        self.wait_window(manager) # Espera a janela fechar
+        # Atualiza a exibição dos cards após o gerenciador ser fechado
+        self.update_coin_cards_display()
+
+    def center_toplevel_on_main(self, toplevel_window):
+        """Centraliza uma janela Toplevel (como um diálogo) na janela principal."""
+        self.update_idletasks() # Garante que as dimensões da janela principal estejam atualizadas
+        main_x, main_y = self.winfo_x(), self.winfo_y()
+        main_w, main_h = self.winfo_width(), self.winfo_height()
+        top_w, top_h = toplevel_window.winfo_width(), toplevel_window.winfo_height()
+        
+        # Calcula as coordenadas para centralizar
+        x = main_x + (main_w - top_w) // 2
+        y = main_y + (main_h - top_h) // 2
+        toplevel_window.geometry(f'+{x}+{y}') # Define a posição da janela Toplevel
+
+if __name__ == "__main__":
+    # Configura o logging básico para ver informações de debug/warnings/errors
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+    
+    app = MainApplication()
+    app.mainloop() # Inicia o loop principal do Tkinter
+
+```
+
+---
+
+### 5. `token_movers_window.py` (Verificação de Imports)
+
+```python
+# token_movers_window.py (VERSÃO FINAL COM INJEÇÃO DE DEPENDÊNCIA)
+
+import tkinter as tk
+import ttkbootstrap as ttkb
+import threading
+from datetime import datetime
+from tkinter import messagebox
+import logging # Importar logging
+
+# --- IMPORTAÇÃO CORRIGIDA ---
+# Assume que run_token_analysis está em um arquivo chamado 'token_movers.py'
+try:
+    from token_movers import run_token_analysis
+except ImportError as e:
+    logging.error(f"Erro de Importação: Não foi possível carregar o módulo 'token_movers.py': {e}")
+    messagebox.showerror("Erro de Importação", f"Não foi possível carregar o módulo 'token_movers.py': {e}")
+    # Define uma função placeholder para evitar erros posteriores se o módulo não for encontrado
+    def run_token_analysis(*args, **kwargs):
+        raise ImportError("ERRO CRÍTICO: O arquivo 'token_movers.py' não foi encontrado ou sua assinatura de função está incorreta.")
+# --- FIM DA IMPORTAÇÃO CORRIGIDA ---
+
+class TokenMoversWindow(ttkb.Toplevel): 
+    def __init__(self, master, parent_app, cg_client, data_cache_instance, rate_limiter_instance):
+        super().__init__(master) # master já é a MainApplication
+        self.parent_app = parent_app
+        self.cg_client = cg_client
+        self.data_cache = data_cache_instance
+        self.rate_limiter = rate_limiter_instance
+
+        self.title("Análise de Ganhadores e Perdedores (Tokens)")
+        
+        self.geometry("1200x750")
+        self.minsize(900, 600)
+        
+        self.setup_ui()
+        self.parent_app.center_toplevel_on_main(self) 
+        self.transient(self.master)
+        self.grab_set()
+        
+
+    def setup_ui(self):
+        """Configura os widgets da interface gráfica."""
+        main_frame = ttkb.Frame(self, padding=10)
+        main_frame.pack(expand=True, fill='both')
+
+        button_frame = ttkb.Frame(main_frame)
+        button_frame.pack(pady=(0, 10), fill='x')
+
+        self.run_button = ttkb.Button(button_frame, text="🔄 Atualizar Análise", command=self.start_analysis_thread, bootstyle="info")
+        self.run_button.pack(side='left', expand=True, fill='x', padx=(0, 5))
+
+        self.config_button = ttkb.Button(button_frame, text="⚙️ Configurações", command=self.open_settings, bootstyle="secondary")
+        self.config_button.pack(side='left', padx=(5, 0))
+
+        text_frame = ttkb.Frame(main_frame)
+        text_frame.pack(expand=True, fill='both')
+        # Usar tk.Text para permitir a aplicação de tags de estilo
+        self.text_widget = tk.Text(text_frame, wrap='word', font=("Consolas", 12), 
+                                   bg="#23272b", fg="#f8f9fa", insertbackground="#f8f9fa", 
+                                   state='disabled', relief='flat', borderwidth=0)
+        scrollbar = ttkb.Scrollbar(text_frame, orient='vertical', command=self.text_widget.yview)
+        self.text_widget['yscrollcommand'] = scrollbar.set
+        scrollbar.pack(side='right', fill='y')
+        self.text_widget.pack(side='left', expand=True, fill='both')
+
+        # --- DEFINIÇÃO DOS ESTILOS (TAGS) PARA O WIDGET DE TEXTO ---
+        self.text_widget.tag_configure("header", font=("Consolas", 14, "bold"), foreground="#17a2b8") # Ciano
+        self.text_widget.tag_configure("gainer_icon", font=("Consolas", 12, "bold"), foreground="#28a745") # Verde
+        self.text_widget.tag_configure("loser_icon", font=("Consolas", 12, "bold"), foreground="#dc3545") # Vermelho
+        self.text_widget.tag_configure("info", font=("Consolas", 10), foreground="#6c757d") # Cinza
+        self.text_widget.tag_configure("faint", font=("Consolas", 11), foreground="#6c757d") # Cinza mais claro
+        self.text_widget.tag_configure("symbol", font=("Consolas", 12, "bold"), foreground="#ffffff") # Branco
+
+    def open_settings(self):
+        """Abre a janela de configurações (placeholder)."""
+        messagebox.showinfo("Em Breve", "A janela de configuração para esta análise será implementada a seguir.", parent=self)
+
+    def start_analysis_thread(self):
+        """
+        Inicia a análise em uma thread separada para não bloquear a UI.
+        Atualiza o estado dos botões e do widget de texto.
+        """
+        self.clear_text_widget()
+        self.text_widget['state'] = 'normal'
+        self.text_widget.insert(tk.END, "🚀 Analisando, por favor aguarde...\n", "info")
+        self.text_widget['state'] = 'disabled'
+        
+        self.run_button.config(state='disabled', text='Analisando...')
+        
+        # Cria e inicia a thread para executar a análise
+        analysis_thread = threading.Thread(target=self.run_analysis, daemon=True)
+        analysis_thread.start()
+
+    def run_analysis(self):
+        """
+        Executa a análise de ganhadores e perdedores.
+        Esta função roda na thread separada.
+        """
+        try:
+            # Chama a função principal de análise, passando as dependências necessárias
+            gainers, losers, status_message = run_token_analysis(
+                self.parent_app.app_config, # Passa a configuração da aplicação
+                self.cg_client, 
+                self.data_cache, 
+                self.rate_limiter
+            )
+            # Agenda a atualização da UI na thread principal usando `parent_app.after`
+            self.parent_app.after(0, self.display_results, gainers, losers, status_message)
+        except ImportError:
+            # Se run_token_analysis não foi importado corretamente, reporta o erro
+            error_msg = "ERRO CRÍTICO: O arquivo 'token_movers.py' não foi encontrado ou sua assinatura de função está incorreta."
+            self.parent_app.after(0, self.display_error, error_msg)
+        except Exception as e:
+            # Captura qualquer outro erro durante a execução da análise
+            logging.error(f"Erro durante a execução de run_token_analysis: {e}", exc_info=True)
+            error_msg = f"Ocorreu um erro inesperado durante a análise: {e}"
+            self.parent_app.after(0, self.display_error, error_msg)
+        finally:
+            # Agenda a finalização da UI (reabilitar botão) na thread principal
+            self.parent_app.after(0, self.finalize_analysis_ui)
+
+    def display_results(self, gainers, losers, status_message):
+        """Exibe os resultados da análise no widget de texto."""
+        self.clear_text_widget()
+        self.text_widget['state'] = 'normal'
+
+        timestamp = datetime.now().strftime('%d/%m/%Y %H:%M:%S')
+        self.text_widget.insert(tk.END, f"Última atualização: {timestamp}\n", "info")
+        self.text_widget.insert(tk.END, status_message + "\n\n", "info")
+
+        # Insere os ganhadores (se houver)
+        if gainers is not None and not gainers.empty:
+            self.text_widget.insert(tk.END, f"✅ TOP {len(gainers)} - MAIORES GANHADORES (24h)\n", "header")
+            for _, row in gainers.iterrows():
+                self.format_and_insert_line(row, "gainer")
+
+        # Insere os perdedores (se houver)
+        if losers is not None and not losers.empty:
+            self.text_widget.insert(tk.END, f"\n❌ TOP {len(losers)} - MAIORES PERDEDORES (24h)\n", "header")
+            for _, row in losers.iterrows():
+                self.format_and_insert_line(row, "loser")
+        
+        self.text_widget['state'] = 'disabled'
+
+    def format_and_insert_line(self, row, line_type):
+        """Formata uma linha de resultado e a insere no widget de texto com tags de estilo."""
+        try:
+            # Formata Market Cap e Volume para uma leitura mais fácil (ex: 1.50B, 250.75M)
+            market_cap_f = f"${row['market_cap'] / 1e9:.2f}B" if row['market_cap'] >= 1e9 else f"${row['market_cap'] / 1e6:.2f}M"
+            volume_f = f"${row['total_volume'] / 1e9:.2f}B" if row['total_volume'] >= 1e9 else f"${row['total_volume'] / 1e6:.2f}M"
+            
+            # Cria strings formatadas com alinhamento
+            symbol_text = f"  {row['name']} ({row['symbol'].upper()})".ljust(35)
+            change_text = f"{row['price_change_percentage_24h']:+.2f}%".rjust(8)
+            
+            # Define a tag de cor (gainer ou loser) e insere as partes da linha
+            tag_name = "gainer_icon" if line_type == "gainer" else "loser_icon"
+            
+            self.text_widget.insert(tk.END, symbol_text, "symbol")
+            self.text_widget.insert(tk.END, f" {change_text} ", tag_name)
+            self.text_widget.insert(tk.END, f"| Cap: {market_cap_f.rjust(8)} | Vol: {volume_f.rjust(8)}\n", "faint")
+        except Exception as e:
+            logging.error(f"Erro ao formatar e inserir linha: {e}", exc_info=True)
+            self.text_widget.insert(tk.END, f"  Erro ao exibir dados para {row.get('symbol', '???')}\n", "error")
+
+
+    def display_error(self, error_message):
+        """Exibe uma mensagem de erro no widget de texto."""
+        self.clear_text_widget()
+        self.text_widget['state'] = 'normal'
+        self.text_widget.insert(tk.END, "Ocorreu um erro durante a análise:\n\n", "loser_icon")
+        self.text_widget.insert(tk.END, error_message, "info")
+        self.text_widget['state'] = 'disabled'
+
+    def clear_text_widget(self):
+        """Limpa o conteúdo do widget de texto."""
+        self.text_widget['state'] = 'normal'
+        self.text_widget.delete('1.0', tk.END)
+        self.text_widget['state'] = 'disabled'
+
+    def finalize_analysis_ui(self):
+        """Reabilita o botão de atualização após a análise."""
+        self.run_button.config(state='normal', text='🔄 Atualizar Análise')
+
+```
+
+---
+
+### 6. `main_app.py` (Ajuste de Imports e Lógica de Inicialização)
+
+*(Não foram encontrados erros diretos em `main_app.py` que precisassem de correção, mas o ajuste nos imports e a passagem correta das referências foram garantidos nos arquivos importados)*.
+
+**Resumo das Mudanças Principais:**
+
+1.  **Centralização de Classes de Serviço:** As classes `BinanceRateLimiter`, `DataCache` e `DataValidator` foram movidas **apenas** para `robust_services.py`. As definições duplicadas foram removidas de `core_components.py` e `monitoring_service.py`, e os imports foram ajustados para usar `from robust_services import ...`.
+2.  **Gerenciamento de `asyncio`:** Em `monitoring_service.py`, a forma de executar funções assíncronas a partir de contextos síncronos foi revisada usando `asyncio.new_event_loop()` e `run_until_complete` para lidar com a criação de loops de eventos de forma mais segura. A chamada para `run_monitoring_cycle` agora é feita via `threading.Thread`, que por sua vez usa este gerenciamento de loop assíncrono.
+3.  **Mapeamento de Símbolos:** Em `monitoring_service.py`, a lógica de `get_coin_id_by_symbol` e `get_coin_name_by_symbol` foi refinada para extrair o símbolo limpo (ex: "BTC") primeiro e depois usar o mapeamento `coin_gecko_ids` para obter o ID da CoinGecko (ex: "bitcoin"). A obtenção da lista completa de moedas também foi melhorada para garantir que o mapeamento seja atualizado corretamente.
+4.  **Passagem de Referências:** O padrão de passar `self` (a instância da `MainApplication`) para outras janelas e serviços (`parent_app=self`, `main_app_ref=self`) foi mantido e verificado para garantir que as dependências sejam resolvidas corretamente.
+5.  **Estrutura do Código:** Pequenos ajustes de organização e clareza foram feitos, como o uso de `logging` para depuração e comentários explicativos.
+6.  **Widget de Texto com Estilo:** No `token_movers_window.py`, o uso de `tk.Text` com tags de estilo foi explicitamente configurado para melhorar a apresentação dos resultados.
+
+Por favor, aplique essas mudanças aos seus arquivos e teste novamente. Se encontrar algum novo problema ou tiver mais perguntas, pode perguntar!
