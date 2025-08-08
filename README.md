@@ -15,7 +15,7 @@ Monitor de criptomoedas em tempo real com sistema de alertas automáticos.
 ### Desenvolvimento
 ```bash
 # Clone o repositório
-git clone https://github.com/SEU_USUARIO/MonitorCriptomoedas3.1.git
+git clone https://github.com/PauloBennertz/MonitorCriptomoedas3.1.git
 cd MonitorCriptomoedas3.1
 
 # Crie ambiente virtual
