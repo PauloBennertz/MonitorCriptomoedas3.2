@@ -558,6 +558,25 @@ class AlertManagerWindow(ttkb.Toplevel):
         self._populate_symbols_tree()
         self.search_var.trace_add("write", self._filter_symbols)
         self.parent_app.center_toplevel_on_main(self)
+        self.bind_all("<MouseWheel>", self._on_mousewheel)
+
+    def _on_mousewheel(self, event):
+        """Permite a rolagem contextual com o scroll do mouse."""
+        widget = self.winfo_containing(event.x_root, event.y_root)
+        if widget is None:
+            return
+
+        if self.symbols_tree.winfo_ismapped() and (widget == self.symbols_tree or widget.winfo_parent() == self.symbols_tree.winfo_parent()):
+            target_tree = self.symbols_tree
+        elif self.conditions_tree.winfo_ismapped() and (widget == self.conditions_tree or widget.winfo_parent() == self.conditions_tree.winfo_parent()):
+            target_tree = self.conditions_tree
+        else:
+            return
+
+        if event.num == 5 or event.delta == -120:
+            target_tree.yview_scroll(1, "units")
+        elif event.num == 4 or event.delta == 120:
+            target_tree.yview_scroll(-1, "units")
 
     def _filter_symbols(self, *args):
         """Filtra a lista de moedas na treeview com base no texto de busca."""
@@ -677,6 +696,25 @@ class ManageSymbolsDialog(ttkb.Toplevel):
         ttkb.Button(bottom_frame, text="Cancelar", command=self.destroy, bootstyle="secondary").pack(side='left', padx=10)
         self._populate_lists()
         self.parent_app.center_toplevel_on_main(self)
+        self.bind_all("<MouseWheel>", self._on_mousewheel)
+
+    def _on_mousewheel(self, event):
+        """Permite a rolagem contextual com o scroll do mouse."""
+        widget = self.winfo_containing(event.x_root, event.y_root)
+        if widget is None:
+            return
+
+        if widget == self.available_listbox or widget.winfo_parent() == self.available_listbox.winfo_parent():
+            target_listbox = self.available_listbox
+        elif widget == self.monitored_listbox or widget.winfo_parent() == self.monitored_listbox.winfo_parent():
+            target_listbox = self.monitored_listbox
+        else:
+            return
+
+        if event.num == 5 or event.delta == -120:
+            target_listbox.yview_scroll(1, "units")
+        elif event.num == 4 or event.delta == 120:
+            target_listbox.yview_scroll(-1, "units")
             
     def _populate_lists(self):
         """Preenche as listas de moedas disponíveis e monitoradas usando a lista da Binance."""
@@ -880,8 +918,16 @@ class AlertHistoryWindow(ttkb.Toplevel):
         self.tree.bind("<<TreeviewSelect>>", self._on_selection)
         self.search_var.trace_add("write", self._filter_history)
         self.period_var.trace_add("write", self._filter_history)
+        self.bind_all("<MouseWheel>", self._on_mousewheel)
         self._load_history()
         self.parent_app.center_toplevel_on_main(self)
+
+    def _on_mousewheel(self, event):
+        """Permite a rolagem da lista de histórico com o scroll do mouse."""
+        if event.num == 5 or event.delta == -120:
+            self.tree.yview_scroll(1, "units")
+        elif event.num == 4 or event.delta == 120:
+            self.tree.yview_scroll(-1, "units")
 
     def _load_history(self):
         """Carrega e exibe o histórico de alertas na tabela."""
