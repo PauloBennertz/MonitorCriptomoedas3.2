@@ -274,21 +274,23 @@ def get_btc_dominance():
     """Busca a dominância de mercado do BTC a partir da CoinGecko."""
     try:
         cache_key = {'func': 'get_btc_dominance'}
-        if cached_data := robust_services.data_cache.get(cache_key, ttl=300): return cached_data
-        
+        if cached_data := robust_services.data_cache.get(cache_key, ttl=300):
+            return cached_data
+
         robust_services.rate_limiter.wait_if_needed()
+        # A API da CoinGecko retorna um dicionário diretamente.
+        # A chave 'data' contém as informações globais.
         global_data = cg_client.get_global()
         
-        btc_dominance = 0
-        if 'data' in global_data and 'market_cap_percentage' in global_data['data']:
-            btc_dominance = global_data['data']['market_cap_percentage'].get('btc', 0)
-        
-        if btc_dominance > 0:
+        # O valor da dominância do BTC está em 'data' -> 'market_cap_percentage' -> 'btc'
+        btc_dominance = global_data.get('data', {}).get('market_cap_percentage', {}).get('btc')
+
+        if btc_dominance is not None and isinstance(btc_dominance, (int, float)):
             result = f"{btc_dominance:.2f}%"
             robust_services.data_cache.set(cache_key, result)
             return result
         else:
-            logging.warning("Dominância BTC não encontrada nos dados da API.")
+            logging.warning(f"Dominância BTC não encontrada ou em formato inválido na resposta da API: {global_data}")
             return "N/A"
             
     except Exception as e:
