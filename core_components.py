@@ -317,7 +317,7 @@ class AlertConfigDialog(ttkb.Toplevel):
         conditions_outer_frame = ttkb.Frame(main_container, bootstyle="dark")
         conditions_outer_frame.pack(side="top", fill="both", expand=True)
         
-        canvas = tk.Canvas(conditions_outer_frame, borderwidth=0, highlightthickness=0, bg=conditions_outer_frame.cget('bg'))
+        canvas = tk.Canvas(conditions_outer_frame, borderwidth=0, highlightthickness=0, bg="#2a2a2a")
         scrollbar = ttkb.Scrollbar(conditions_outer_frame, orient="vertical", command=canvas.yview, bootstyle="round-dark")
         conditions_frame = ttkb.Frame(canvas, bootstyle="dark", padding=(10, 0))
         
@@ -338,7 +338,8 @@ class AlertConfigDialog(ttkb.Toplevel):
         ttkb.Button(btn_frame, text="❌ Cancelar", command=self.destroy, bootstyle="danger-outline", padding=10).pack(side="left", padx=5)
 
         self.parent_app.center_toplevel_on_main(self)
-        self.resizable(False, True)
+        self.minsize(650, 700)
+        self.resizable(True, True)
 
     def _get_default_config(self):
         """Retorna uma estrutura de configuração de alerta padrão."""
@@ -458,6 +459,8 @@ class AlertManagerWindow(ttkb.Toplevel):
         self.coin_manager = coin_manager
         self.title("Gerenciador de Alertas")
         self.geometry("1200x700")
+        self.minsize(900, 600)
+        self.resizable(True, True)
         self.transient(self.master)
         self.grab_set()
         
@@ -544,6 +547,23 @@ class AlertManagerWindow(ttkb.Toplevel):
         self._populate_symbols_tree()
         self.search_var.trace_add("write", self._filter_symbols)
         self.parent_app.center_toplevel_on_main(self)
+
+    def _filter_symbols(self, *args):
+        """Filtra a lista de moedas na treeview com base no texto de busca."""
+        search_term = self.search_var.get().lower()
+
+        # Limpa a seleção e a árvore
+        self.symbols_tree.selection_remove(self.symbols_tree.selection())
+        for i in self.symbols_tree.get_children():
+            self.symbols_tree.delete(i)
+
+        # Repopula com base no filtro
+        monitored_symbols = [crypto.get('symbol') for crypto in self.parent_app.config.get("cryptos_to_monitor", []) if crypto.get('symbol')]
+        for symbol in sorted(monitored_symbols):
+            if search_term in symbol.lower():
+                self.symbols_tree.insert('', tk.END, iid=symbol, values=(f"💰 {symbol}",))
+
+        self.on_symbol_selected()
         
     def _populate_symbols_tree(self):
         """Preenche a árvore de símbolos com as moedas atualmente monitoradas."""
@@ -648,69 +668,57 @@ class ManageSymbolsDialog(ttkb.Toplevel):
         self.parent_app.center_toplevel_on_main(self)
             
     def _populate_lists(self):
-        """Preenche as listas de moedas disponíveis e monitoradas."""
-        all_coins_data = self.coin_manager.get_all_coins()
-        if not all_coins_data:
-            messagebox.showerror("Erro", "Não foi possível carregar a lista de moedas. Verifique sua conexão ou o arquivo all_coins.json.", parent=self)
-            return
-
-        self.all_symbols_master = sorted(
-            [f"{coin['name']} ({coin['symbol'].upper()})" for coin in all_coins_data if 'name' in coin and 'symbol' in coin],
-            key=lambda x: x.lower()
-        )
-
+        """Preenche as listas de moedas disponíveis e monitoradas usando a lista da Binance."""
+        self.all_symbols_master = sorted(self.parent_app.all_symbols)
         monitored_symbols = {crypto['symbol'] for crypto in self.parent_app.config.get("cryptos_to_monitor", [])}
 
         self.available_listbox.delete(0, tk.END)
         self.monitored_listbox.delete(0, tk.END)
 
-        for display_name in self.all_symbols_master:
-            symbol = self.coin_manager.get_symbol_from_display_name(display_name)
-            if symbol and symbol not in monitored_symbols:
-                self.available_listbox.insert(tk.END, display_name)
+        for symbol in self.all_symbols_master:
+            if symbol not in monitored_symbols:
+                self.available_listbox.insert(tk.END, symbol)
 
         for symbol in sorted(list(monitored_symbols)):
-            # Find the display name for the monitored symbol
-            display_name = next((d_name for d_name in self.all_symbols_master if self.coin_manager.get_symbol_from_display_name(d_name) == symbol), symbol)
-            self.monitored_listbox.insert(tk.END, display_name)
+            self.monitored_listbox.insert(tk.END, symbol)
         
     def _filter_available(self, *args):
         """Filtra a lista de moedas disponíveis com base na busca."""
         search_term = self.available_search_var.get().lower()
         self.available_listbox.delete(0, tk.END)
-        monitored_display_names = set(self.monitored_listbox.get(0, tk.END))
+        monitored_symbols = set(self.monitored_listbox.get(0, tk.END))
 
-        for display_name in self.all_symbols_master:
-            if search_term in display_name.lower() and display_name not in monitored_display_names:
-                self.available_listbox.insert(tk.END, display_name)
+        for symbol in self.all_symbols_master:
+            if search_term in symbol.lower() and symbol not in monitored_symbols:
+                self.available_listbox.insert(tk.END, symbol)
 
     def _filter_monitored(self, *args):
         """Filtra a lista de moedas monitoradas com base na busca."""
         search_term = self.monitored_search_var.get().lower()
         self.monitored_listbox.delete(0, tk.END)
 
-        monitored_symbols = {crypto['symbol'] for crypto in self.parent_app.config.get("cryptos_to_monitor", [])}
-        for symbol in sorted(list(monitored_symbols)):
-            display_name = next((d_name for d_name in self.all_symbols_master if self.coin_manager.get_symbol_from_display_name(d_name) == symbol), symbol)
-            if search_term in display_name.lower():
-                self.monitored_listbox.insert(tk.END, display_name)
+        # We need the original list of monitored symbols from the config to filter from
+        all_monitored_symbols = {crypto['symbol'] for crypto in self.parent_app.config.get("cryptos_to_monitor", [])}
+
+        for symbol in sorted(list(all_monitored_symbols)):
+            if search_term in symbol.lower():
+                self.monitored_listbox.insert(tk.END, symbol)
 
     def _add_symbols(self):
         """Adiciona os símbolos selecionados à lista de moedas monitoradas."""
         selected_indices = self.available_listbox.curselection()
         if not selected_indices: return
+        symbols_to_move = [self.available_listbox.get(i) for i in selected_indices]
 
-        items_to_move = [self.available_listbox.get(i) for i in selected_indices]
-
-        # Adicionar à lista de monitorados
+        # Adicionar à lista de monitorados e ordenar
         current_monitored = list(self.monitored_listbox.get(0, tk.END))
-        for item in items_to_move:
-            if item not in current_monitored:
-                current_monitored.append(item)
+        for symbol in symbols_to_move:
+            if symbol not in current_monitored:
+                current_monitored.append(symbol)
 
         self.monitored_listbox.delete(0, tk.END)
-        for item in sorted(current_monitored):
-            self.monitored_listbox.insert(tk.END, item)
+        for symbol in sorted(current_monitored):
+            self.monitored_listbox.insert(tk.END, symbol)
 
         # Remover da lista de disponíveis
         for i in sorted(selected_indices, reverse=True):
@@ -720,18 +728,17 @@ class ManageSymbolsDialog(ttkb.Toplevel):
         """Remove os símbolos selecionados da lista de moedas monitoradas."""
         selected_indices = self.monitored_listbox.curselection()
         if not selected_indices: return
+        symbols_to_move = [self.monitored_listbox.get(i) for i in selected_indices]
 
-        items_to_move = [self.monitored_listbox.get(i) for i in selected_indices]
-
-        # Adicionar de volta à lista de disponíveis
+        # Adicionar de volta à lista de disponíveis e ordenar
         current_available = list(self.available_listbox.get(0, tk.END))
-        for item in items_to_move:
-            if item not in current_available:
-                current_available.append(item)
+        for symbol in symbols_to_move:
+            if symbol not in current_available:
+                current_available.append(symbol)
         
         self.available_listbox.delete(0, tk.END)
-        for item in sorted(current_available):
-            self.available_listbox.insert(tk.END, item)
+        for symbol in sorted(current_available):
+            self.available_listbox.insert(tk.END, symbol)
 
         # Remover da lista de monitorados
         for i in sorted(selected_indices, reverse=True):
@@ -739,11 +746,7 @@ class ManageSymbolsDialog(ttkb.Toplevel):
 
     def on_save(self):
         """Salva a nova lista de moedas monitoradas na configuração."""
-        new_monitored_display_names = self.monitored_listbox.get(0, tk.END)
-
-        new_monitored_symbols = {self.coin_manager.get_symbol_from_display_name(d_name) for d_name in new_monitored_display_names}
-        new_monitored_symbols = {s for s in new_monitored_symbols if s} # Remover Nones
-
+        new_monitored_symbols = set(self.monitored_listbox.get(0, tk.END))
         current_configs = {crypto['symbol']: crypto for crypto in self.parent_app.config.get("cryptos_to_monitor", [])}
 
         new_config_list = []
