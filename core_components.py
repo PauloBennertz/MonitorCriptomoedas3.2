@@ -329,6 +329,9 @@ class AlertConfigDialog(ttkb.Toplevel):
         conditions_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
         canvas.bind("<Configure>", lambda e: canvas.itemconfig(canvas_frame_id, width=e.width))
         
+        self.canvas = canvas  # Salvar referência do canvas
+        self.bind_all("<MouseWheel>", self._on_mousewheel)
+
         self._create_condition_widgets(conditions_frame)
         
         btn_frame = ttkb.Frame(main_container, bootstyle="dark", padding=(0, 15, 0, 0))
@@ -340,6 +343,14 @@ class AlertConfigDialog(ttkb.Toplevel):
         self.parent_app.center_toplevel_on_main(self)
         self.minsize(650, 700)
         self.resizable(True, True)
+
+    def _on_mousewheel(self, event):
+        """Permite a rolagem da lista de condições com o scroll do mouse."""
+        # A direção da rolagem pode variar entre sistemas operacionais
+        if event.num == 5 or event.delta == -120:
+            self.canvas.yview_scroll(1, "units")
+        elif event.num == 4 or event.delta == 120:
+            self.canvas.yview_scroll(-1, "units")
 
     def _get_default_config(self):
         """Retorna uma estrutura de configuração de alerta padrão."""
