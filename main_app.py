@@ -1,5 +1,3 @@
-# main_app.py (VERSÃO CORRIGIDA E COMPLETA)
-
 import tkinter as tk
 from tkinter import ttk, messagebox
 import ttkbootstrap as ttkb
@@ -11,37 +9,25 @@ import sys
 import queue
 import logging
 import time
-
-# Importações de seus serviços e componentes.
-from notification_service import play_alert_sound, show_windows_ok_popup, send_telegram_alert, AlertConsolidator
+from notification_service import send_telegram_alert, AlertConsolidator
 import robust_services
-
-# Importa as funções de API e o ciclo de monitoramento
 from monitoring_service import (
     run_monitoring_cycle,
-    run_single_symbol_update,
     get_coingecko_global_mapping,
     fetch_all_binance_symbols_startup,
     get_btc_dominance
 )
-
-# Importa os componentes de UI
 from core_components import (
     get_application_path,
     CryptoCard,
-    AlertConfigDialog,
     AlertHistoryWindow,
     AlertManagerWindow,
     StartupConfigDialog
 )
-
-# Importando as janelas Toplevel
 from api_config_window import ApiConfigWindow
 from capital_flow_window import CapitalFlowWindow
 from token_movers_window import TokenMoversWindow
-from help_window import HelpWindow
-from support_material_window import SupportMaterialWindow
-from market_analysis_config_window import MarketAnalysisConfigWindow
+from sound_config_window import SoundConfigWindow
 
 try:
     from PIL import Image, ImageTk
@@ -49,53 +35,39 @@ except ImportError:
     messagebox.showerror("Biblioteca Faltando", "A biblioteca 'Pillow' é necessária. Instale com 'pip install Pillow'")
     sys.exit()
 
-
 class CryptoApp:
+    """Classe principal da aplicação que gerencia a UI e os serviços de backend."""
     def __init__(self, root, config, all_symbols):
-        print("DEBUG: Iniciando __init__ da CryptoApp...")
+        """Inicializa a aplicação, configura a UI e inicia os serviços."""
         self.root = root
         self.config = config
         self.all_symbols = all_symbols
-        
-        print("LOG: Inicializando CryptoApp: Buscando mapeamento CoinGecko...")
         self.coingecko_mapping = get_coingecko_global_mapping()
-        print("LOG: Mapeamento CoinGecko carregado. Inicializando fila de dados...")
-        
         self.data_queue = queue.Queue()
         self.monitoring_thread = None
         self.stop_monitoring_event = threading.Event()
         self.coin_cards = {}
-        
-        print("LOG: Carregando histórico de alertas...")
         self.alert_history = self.load_alert_history()
         
-        print("LOG: Configurando logging...")
         self.setup_logging()
-        
-        print("LOG: Configurando UI...")
         self.setup_ui()
         
-        print("LOG: Inicializando sistema de consolidação de alertas...")
         self.alert_consolidator = AlertConsolidator(self.root, self)
-        
-        print("LOG: UI configurada. Iniciando monitoramento...")
         self.start_monitoring()
         
-        print("LOG: Monitoramento iniciado. Agendando processamento da fila...")
         self.root.after(100, self.process_queue)
         self.update_dominance_display()
-        
-        print("LOG: __init__ da CryptoApp finalizado com sucesso.")
+        logging.info("CryptoApp inicializada com sucesso.")
 
     def setup_logging(self):
+        """Configura o sistema de logging básico."""
         logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
     def setup_ui(self):
-        # Configura a janela principal com tema escuro
+        """Constrói todos os elementos da interface gráfica principal."""
         self.root.title("Crypto Monitor Pro")
         self.root.geometry("1280x800")
         
-        # Cria menu moderno com ícones
         self.menu_bar = tk.Menu(self.root)
         self.root.config(menu=self.menu_bar)
         
@@ -116,133 +88,57 @@ class CryptoApp:
         config_menu.add_command(label="🔊 Configurar Sons", command=self.show_sound_config_window)
         config_menu.add_command(label="Chaves de API", command=self.show_api_config_window)
 
-
-        # Header principal com gradiente
         header_frame = ttkb.Frame(self.root, bootstyle="dark")
         header_frame.pack(side="top", fill="x")
         
-        # Título da aplicação
         title_frame = ttkb.Frame(header_frame, bootstyle="dark", padding=10)
         title_frame.pack(side="top", fill="x")
         
-        title_label = ttkb.Label(
-            title_frame, 
-            text="CRYPTO MONITOR PRO", 
-            font=("Segoe UI", 16, "bold"),
-            bootstyle="info"
-        )
-        title_label.pack(side="left")
+        ttkb.Label(title_frame, text="CRYPTO MONITOR PRO", font=("Segoe UI", 16, "bold"), bootstyle="info").pack(side="left")
         
-        # Status frame com visual moderno
         status_frame = ttkb.Frame(header_frame, padding=(15, 10), bootstyle="secondary")
         status_frame.pack(side="top", fill="x")
 
-        # Frame para dominância BTC com visual moderno
         dominance_frame = ttkb.Frame(status_frame, bootstyle="secondary")
         dominance_frame.pack(side="left")
         
-        # Ícone para dominância BTC
-        btc_icon_label = ttkb.Label(
-            dominance_frame, 
-            text="₿", 
-            font=("Arial", 16, "bold"), 
-            bootstyle="warning"
-        )
-        btc_icon_label.pack(side="left", padx=(0, 5))
-        
-        # Label para texto de dominância
-        ttkb.Label(
-            dominance_frame, 
-            text="Dominância BTC:", 
-            font=("Segoe UI", 11, "bold"), 
-            bootstyle="light"
-        ).pack(side="left")
-        
-        # Valor de dominância com destaque
-        self.dominance_label = ttkb.Label(
-            dominance_frame, 
-            text="Carregando...", 
-            font=("Segoe UI", 12, "bold"), 
-            bootstyle="warning", 
-            width=12
-        )
+        ttkb.Label(dominance_frame, text="₿", font=("Arial", 16, "bold"), bootstyle="warning").pack(side="left", padx=(0, 5))
+        ttkb.Label(dominance_frame, text="Dominância BTC:", font=("Segoe UI", 11, "bold"), bootstyle="light").pack(side="left")
+
+        self.dominance_label = ttkb.Label(dominance_frame, text="Carregando...", font=("Segoe UI", 12, "bold"), bootstyle="warning", width=12)
         self.dominance_label.pack(side="left", padx=(8, 0))
         
-        # Separador vertical
         ttkb.Separator(status_frame, orient="vertical", bootstyle="light").pack(side="left", fill="y", padx=15, pady=5)
         
-        # Status da API
         api_status_frame = ttkb.Frame(status_frame, bootstyle="secondary")
         api_status_frame.pack(side="left")
         
-        ttkb.Label(
-            api_status_frame, 
-            text="Status API:", 
-            font=("Segoe UI", 11), 
-            bootstyle="light"
-        ).pack(side="left")
-        
-        self.update_status_label = ttkb.Label(
-            api_status_frame, 
-            text="", 
-            font=("Segoe UI", 11, "bold"), 
-            bootstyle="secondary"
-        )
+        ttkb.Label(api_status_frame, text="Status API:", font=("Segoe UI", 11), bootstyle="light").pack(side="left")
+
+        self.update_status_label = ttkb.Label(api_status_frame, text="", font=("Segoe UI", 11, "bold"), bootstyle="secondary")
         self.update_status_label.pack(side="left", padx=(8, 0))
         
-        # Botão de atualização manual com design moderno
-        self.update_button = ttkb.Button(
-            status_frame, 
-            text="🔄 Atualizar Dados", 
-            command=self.manual_update_prices, 
-            bootstyle="info", 
-            width=18
-        )
+        self.update_button = ttkb.Button(status_frame, text="🔄 Atualizar Dados", command=self.manual_update_prices, bootstyle="info", width=18)
         self.update_button.pack(side="right", padx=(0, 10))
         
-        # Inicia verificação contínua do status da API
         self.check_api_status()
         
-        # Container principal com fundo escuro
         main_container = ttkb.Frame(self.root, bootstyle="dark")
         main_container.pack(fill=tk.BOTH, expand=True, padx=15, pady=15)
         
-        # Cabeçalho para as moedas
         coins_header = ttkb.Frame(main_container, bootstyle="dark")
         coins_header.pack(fill="x", pady=(0, 10))
         
-        ttkb.Label(
-            coins_header, 
-            text="Suas Criptomoedas Monitoradas", 
-            font=("Segoe UI", 14, "bold"),
-            bootstyle="info"
-        ).pack(side="left")
+        ttkb.Label(coins_header, text="Suas Criptomoedas Monitoradas", font=("Segoe UI", 14, "bold"), bootstyle="info").pack(side="left")
         
-        # Frame principal com scroll
         main_frame = ttkb.Frame(main_container, bootstyle="dark", padding=5)
         main_frame.pack(fill=tk.BOTH, expand=True)
         
-        # Canvas com scrollbar para os cards
-        self.canvas = tk.Canvas(
-            main_frame, 
-            highlightthickness=0, 
-            bg="#2a2a2a" # CORREÇÃO: Cor de fundo explícita para o canvas
-        )
-        
-        # Scrollbar moderna
-        self.scrollbar = ttkb.Scrollbar(
-            main_frame, 
-            orient="vertical", 
-            command=self.canvas.yview, 
-            bootstyle="rounded"
-        )
-        
-        # Frame scrollável para os cards
+        self.canvas = tk.Canvas(main_frame, highlightthickness=0, bg="#2a2a2a")
+        self.scrollbar = ttkb.Scrollbar(main_frame, orient="vertical", command=self.canvas.yview, bootstyle="rounded")
         self.scrollable_frame = ttkb.Frame(self.canvas, bootstyle="dark")
-        self.scrollable_frame.bind(
-            "<Configure>", 
-            lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all"))
-        )
+
+        self.scrollable_frame.bind("<Configure>", lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
         
         self.canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw")
         self.canvas.configure(yscrollcommand=self.scrollbar.set)
@@ -250,292 +146,175 @@ class CryptoApp:
         self.scrollbar.pack(side="right", fill="y")
         self.root.bind('<MouseWheel>', self._on_mousewheel)
         
-        # Footer com informações de status
         footer_frame = ttkb.Frame(self.root, padding=(15, 8), bootstyle="dark")
         footer_frame.pack(side="bottom", fill="x")
         
-        # Status da sessão
-        ttkb.Label(
-            footer_frame, 
-            text=f"Sessão iniciada: {datetime.now().strftime('%d/%m/%Y %H:%M')}",
-            font=("Segoe UI", 9),
-            bootstyle="secondary"
-        ).pack(side="left")
-        
-        # Copyright
-        ttkb.Label(
-            footer_frame, 
-            text="© 2023 Crypto Monitor Pro",
-            font=("Segoe UI", 9),
-            bootstyle="secondary"
-        ).pack(side="right")
-        
-        # Atualiza a exibição dos cards
+        ttkb.Label(footer_frame, text=f"Sessão iniciada: {datetime.now().strftime('%d/%m/%Y %H:%M')}", font=("Segoe UI", 9), bootstyle="secondary").pack(side="left")
+        ttkb.Label(footer_frame, text="© 2023 Crypto Monitor Pro", font=("Segoe UI", 9), bootstyle="secondary").pack(side="right")
+
         self.update_coin_cards_display()
 
     def update_coin_cards_display(self):
-        # Limpa todos os widgets existentes
+        """Recria a grade de cards de criptomoedas com base na configuração atual."""
         for widget in self.scrollable_frame.winfo_children():
             widget.destroy()
             
-        # Obtém a lista de moedas monitoradas
         monitored_symbols = [c['symbol'] for c in self.config.get('cryptos_to_monitor', [])]
         self.coin_cards = {}
         
-        # Define o número de colunas com base na resolução
         screen_width = self.root.winfo_screenwidth()
-        if screen_width >= 1920:
-            num_columns = 5  # Para telas grandes
-        elif screen_width >= 1440:
-            num_columns = 4  # Para telas médias
-        else:
-            num_columns = 3  # Para telas menores
-        
-        # Cria um card para cada moeda
+        num_columns = 5 if screen_width >= 1920 else 4 if screen_width >= 1440 else 3
+
         for i, symbol in enumerate(monitored_symbols):
             base_asset = symbol.replace('USDT', '').upper()
             coin_name = self.coingecko_mapping.get(base_asset, base_asset) 
             
-            # Cria frame de container para o card com espaçamento
             card_container = ttkb.Frame(self.scrollable_frame, bootstyle="dark")
             
-            # Cria o card dentro do container
             card = CryptoCard(card_container, symbol, coin_name)
             card.pack(fill='both', expand=True)
             self.coin_cards[symbol] = card
             
-            # Posiciona o container na grade
             row, col = divmod(i, num_columns)
-            card_container.grid(
-                row=row, 
-                column=col, 
-                padx=12,  # Espaçamento horizontal
-                pady=12,  # Espaçamento vertical
-                sticky="nsew"  # Expande em todas as direções
-            )
-            
-            # Configura a coluna para crescer proporcionalmente
+            card_container.grid(row=row, column=col, padx=12, pady=12, sticky="nsew")
             self.scrollable_frame.columnconfigure(col, weight=1)
             
-        # Se não houver moedas monitoradas, mostra mensagem informativa
         if not monitored_symbols:
             empty_frame = ttkb.Frame(self.scrollable_frame, bootstyle="dark", padding=50)
             empty_frame.grid(row=0, column=0, sticky="nsew")
-            
-            ttkb.Label(
-                empty_frame,
-                text="Nenhuma moeda monitorada",
-                font=("Segoe UI", 16, "bold"),
-                bootstyle="secondary"
-            ).pack(pady=(20, 10))
-            
-            ttkb.Label(
-                empty_frame,
-                text="Use o menu 'Arquivo > Gerenciar Alertas' para adicionar moedas",
-                font=("Segoe UI", 12),
-                bootstyle="secondary"
-            ).pack()
+            ttkb.Label(empty_frame, text="Nenhuma moeda monitorada", font=("Segoe UI", 16, "bold"), bootstyle="secondary").pack(pady=(20, 10))
+            ttkb.Label(empty_frame, text="Use o menu 'Arquivo > Gerenciar Alertas' para adicionar moedas", font=("Segoe UI", 12), bootstyle="secondary").pack()
 
     def update_card_data(self, data):
-        """
-        Atualiza os dados de um card de criptomoeda com animação e efeitos visuais.
-        """
+        """Atualiza os dados de um card de criptomoeda com novos dados da fila."""
         symbol = data.get('symbol')
         card = self.coin_cards.get(symbol)
-        if not card: 
-            return  # Se o card não existir, sai da função
+        if not card: return
 
-        # Obtém o novo preço
         new_price = data.get('current_price', 0.0)
         price_label = card.data_labels.get('current_price')
         
-        # Efeito visual para mudança de preço
         if price_label:
-            # Define a cor com base na variação
+            price_color = 'info'
             if card.previous_price != 0:
-                if new_price > card.previous_price: 
-                    price_color = 'success'
-                    # Adiciona efeito de pulsação para aumento
-                    self._pulse_label(price_label, 'success')
-                elif new_price < card.previous_price: 
-                    price_color = 'danger'
-                    # Adiciona efeito de pulsação para diminuição
-                    self._pulse_label(price_label, 'danger')
-                else:
-                    price_color = 'info'
-            else:
-                price_color = 'info'
+                if new_price > card.previous_price: price_color = 'success'
+                elif new_price < card.previous_price: price_color = 'danger'
             
-            # Configura a cor do label
+            if price_color in ['success', 'danger']: self._pulse_label(price_label, price_color)
             price_label.config(bootstyle=price_color)
         
-        # Atualiza o preço anterior
         card.previous_price = new_price
 
-        # Atualiza todos os labels com os novos dados
         for key, label in card.data_labels.items():
             value = data.get(key, 'N/A')
-            
-            # Formata valores numéricos
             if isinstance(value, (int, float)):
-                if key == 'current_price': 
-                    # Formata preço com precisão adaptativa
-                    if value < 0.001:
-                        text = f"${value:.8f}"
-                    elif value < 0.01:
-                        text = f"${value:.6f}"
-                    elif value < 1:
-                        text = f"${value:.4f}"
-                    else:
-                        text = f"${value:,.2f}"
-                        
-                elif key == 'price_change_24h': 
-                    # Adiciona seta indicativa para variação
-                    arrow = "▲" if value >= 0 else "▼"
-                    text = f"{arrow} {abs(value):.2f}%"
-                    
-                elif key == 'volume_24h':
-                    # Formata volumes grandes
-                    if value >= 1_000_000_000: 
-                        text = f"${value/1_000_000_000:.2f}B"
-                    elif value >= 1_000_000: 
-                        text = f"${value/1_000_000:.2f}M"
-                    else: 
-                        text = f"${value/1_000:.2f}K"
-                        
+                if key == 'current_price': text = f"${value:.8f}" if value < 0.001 else f"${value:.6f}" if value < 0.01 else f"${value:.4f}" if value < 1 else f"${value:,.2f}"
+                elif key == 'price_change_24h': text = f"{'▲' if value >= 0 else '▼'} {abs(value):.2f}%"
+                elif key == 'volume_24h': text = f"${value/1_000_000_000:.2f}B" if value >= 1_000_000_000 else f"${value/1_000_000:.2f}M" if value >= 1_000_000 else f"${value/1_000:.2f}K"
                 elif key == 'rsi_value':
-                    # Formata RSI com cor indicativa
                     text = f"{value:.1f}"
-                    if value <= 30:
-                        label.config(bootstyle="success")  # Sobrevendido
-                    elif value >= 70:
-                        label.config(bootstyle="danger")   # Sobrecomprado
-                    else:
-                        label.config(bootstyle="light")  # Normal
-                else: 
-                    text = f"{value:.2f}"
-            else:
-                # Valores não numéricos
-                text = str(value)
+                    if value <= 30: label.config(bootstyle="success")
+                    elif value >= 70: label.config(bootstyle="danger")
+                    else: label.config(bootstyle="light")
+                else: text = f"{value:.2f}"
+            else: text = str(value)
 
-            # Atualiza o texto do label
             label.config(text=text)
-            
-            # Configura cores específicas para alguns tipos de dados
             if key == 'price_change_24h' and isinstance(value, (int, float)):
-                color = "success" if value >= 0 else "danger"
-                label.config(bootstyle=color)
+                label.config(bootstyle="success" if value >= 0 else "danger")
 
     def _pulse_label(self, label, color_style):
-        """
-        Cria um efeito de pulsação no label para destacar mudanças de preço
-        """
-        # Salva o estilo atual
+        """Cria um efeito de pulsação visual em um label."""
         original_style = label.cget('bootstyle')
-        
-        # Sequência de pulsação: forte -> fraco -> normal
         self.root.after(0, lambda: label.config(bootstyle=f"{color_style}"))
         self.root.after(600, lambda: label.config(bootstyle=f"{color_style}-outline"))
         self.root.after(1200, lambda: label.config(bootstyle=original_style))
 
     def start_monitoring(self):
-        if self.monitoring_thread and self.monitoring_thread.is_alive():
-            return
+        """Inicia o thread de monitoramento em segundo plano."""
+        if self.monitoring_thread and self.monitoring_thread.is_alive(): return
         self.stop_monitoring_event.clear()
-        self.monitoring_thread = threading.Thread(
-            target=run_monitoring_cycle,
-            args=(self.config, self.data_queue, self.stop_monitoring_event, self.coingecko_mapping),
-            daemon=True
-        )
+        self.monitoring_thread = threading.Thread(target=run_monitoring_cycle, args=(self.config, self.data_queue, self.stop_monitoring_event, self.coingecko_mapping), daemon=True)
         self.monitoring_thread.start()
-        logging.info("Serviço de monitoramento iniciado.")
+        logging.info("Serviço de monitoramento em segundo plano iniciado.")
 
     def process_queue(self):
+        """Processa itens da fila de dados (UI e alertas) na thread principal."""
         try:
             while not self.data_queue.empty():
                 item = self.data_queue.get_nowait()
-                if item['type'] == 'data':
-                    self.update_card_data(item['payload'])
-                elif item['type'] == 'alert':
-                    self.handle_alert(item['payload'])
+                if item['type'] == 'data': self.update_card_data(item['payload'])
+                elif item['type'] == 'alert': self.handle_alert(item['payload'])
         finally:
             self.root.after(200, self.process_queue)
 
     def handle_alert(self, payload):
-        message = payload.get('message', 'Alerta genérico')
-        sound = payload.get('sound')
-        symbol = payload.get('symbol')
-        trigger = payload.get('trigger')
-        analysis_data = payload.get('analysis_data')
-        
-        # Salva no histórico
-        self.log_and_save_alert(symbol, trigger, analysis_data)
-        
-        # Adiciona ao consolidador de alertas (em vez de mostrar popup individual)
-        self.alert_consolidator.add_alert(symbol, trigger, message, sound)
-        
-        # Envia para Telegram (mantido para compatibilidade)
-        send_telegram_alert(self.config.get('telegram_bot_token'), self.config.get('telegram_chat_id'), message)
+        """Processa um alerta recebido do serviço de monitoramento."""
+        self.log_and_save_alert(payload.get('symbol'), payload.get('trigger'), payload.get('analysis_data'))
+        self.alert_consolidator.add_alert(payload.get('symbol'), payload.get('trigger'), payload.get('message'), payload.get('sound'))
+        send_telegram_alert(self.config.get('telegram_bot_token'), self.config.get('telegram_chat_id'), payload.get('message'))
 
     def on_closing(self):
+        """Executa procedimentos de limpeza ao fechar a aplicação."""
         if messagebox.askokcancel("Sair", "Deseja realmente fechar o programa?"):
-            logging.info("Fechando o programa...")
+            logging.info("Fechando a aplicação...")
             self.stop_monitoring_event.set()
-            if self.monitoring_thread:
-                self.monitoring_thread.join(timeout=5)
+            if self.monitoring_thread: self.monitoring_thread.join(timeout=5)
             self.save_config()
             self.save_alert_history()
             self.root.destroy()
             sys.exit()
 
     def save_config(self):
+        """Salva a configuração atual no arquivo config.json."""
         config_path = os.path.join(get_application_path(), "config.json")
         try:
-            with open(config_path, 'w', encoding='utf-8') as f:
-                json.dump(self.config, f, indent=2)
+            with open(config_path, 'w', encoding='utf-8') as f: json.dump(self.config, f, indent=2)
             logging.info("Configurações salvas com sucesso.")
         except Exception as e:
             logging.error(f"Erro ao salvar configurações: {e}")
 
     def load_alert_history(self):
+        """Carrega o histórico de alertas do arquivo alert_history.json."""
         history_path = os.path.join(get_application_path(), "alert_history.json")
         try:
-            with open(history_path, 'r', encoding='utf-8') as f:
-                return json.load(f)
+            with open(history_path, 'r', encoding='utf-8') as f: return json.load(f)
         except (FileNotFoundError, json.JSONDecodeError):
             return []
 
     def save_alert_history(self):
+        """Salva o histórico de alertas atual no arquivo alert_history.json."""
         history_path = os.path.join(get_application_path(), "alert_history.json")
         try:
-            with open(history_path, 'w', encoding='utf-8') as f:
-                json.dump(self.alert_history, f, indent=2)
-            print("LOG: Histórico de alertas salvo.")
+            with open(history_path, 'w', encoding='utf-8') as f: json.dump(self.alert_history, f, indent=2)
+            logging.info("Histórico de alertas salvo com sucesso.")
         except Exception as e:
-            print(f"ERRO: Não foi possível salvar o histórico de alertas: {e}")
+            logging.error(f"Não foi possível salvar o histórico de alertas: {e}")
 
     def log_and_save_alert(self, symbol, trigger, data):
+        """Adiciona uma nova entrada de alerta ao histórico."""
         alert_entry = {'timestamp': datetime.now().isoformat(), 'symbol': symbol, 'trigger': trigger, 'data': data}
         self.alert_history.insert(0, alert_entry)
-        if len(self.alert_history) > 200:
-            self.alert_history = self.alert_history[:200]
+        if len(self.alert_history) > 200: self.alert_history = self.alert_history[:200]
 
     def show_alert_manager(self):
+        """Abre a janela do gerenciador de alertas."""
         AlertManagerWindow(self)
 
     def show_capital_flow_window(self):
-        print("LOG: Abrindo a janela de Fluxo de Capital.")
+        """Abre a janela de análise de fluxo de capital."""
         from pycoingecko import CoinGeckoAPI
         cg_client = CoinGeckoAPI()
         CapitalFlowWindow(self.root, self, cg_client, robust_services.data_cache, robust_services.rate_limiter)
 
     def show_token_movers_window(self):
-        print("LOG: Abrindo a janela de Ganhadores e Perdedores.")
+        """Abre a janela de análise de ganhadores e perdedores."""
         from pycoingecko import CoinGeckoAPI
         cg_client = CoinGeckoAPI()
         TokenMoversWindow(self.root, self, cg_client, robust_services.data_cache, robust_services.rate_limiter)
 
     def show_alert_history_window(self):
+        """Abre a janela do histórico de alertas."""
         AlertHistoryWindow(self)
     
     def show_sound_config_window(self):
@@ -544,258 +323,152 @@ class CryptoApp:
         SoundConfigWindow(self.root, self)
 
     def show_api_config_window(self):
-        """Abre a janela de configuração de API e gerais."""
+        """Abre a janela de configuração de chaves de API."""
         ApiConfigWindow(self.root, self)
 
     def center_toplevel_on_main(self, toplevel_window):
+        """Centraliza uma janela Toplevel em relação à janela principal."""
         self.root.update_idletasks()
-        main_x = self.root.winfo_x()
-        main_y = self.root.winfo_y()
-        main_width = self.root.winfo_width()
-        main_height = self.root.winfo_height()
-        top_width = toplevel_window.winfo_width()
-        top_height = toplevel_window.winfo_height()
-
+        main_x, main_y = self.root.winfo_x(), self.root.winfo_y()
+        main_width, main_height = self.root.winfo_width(), self.root.winfo_height()
+        top_width, top_height = toplevel_window.winfo_width(), toplevel_window.winfo_height()
         x = main_x + (main_width - top_width) // 2
         y = main_y + (main_height - top_height) // 2
-
-        screen_width = toplevel_window.winfo_screenwidth()
-        screen_height = toplevel_window.winfo_screenheight()
+        screen_width, screen_height = toplevel_window.winfo_screenwidth(), toplevel_window.winfo_screenheight()
         x = max(0, min(x, screen_width - top_width))
         y = max(0, min(y, screen_height - top_height))
-
         toplevel_window.geometry(f"+{x}+{y}")
         
     def update_dominance_display(self):
-        """Busca e atualiza o label da dominância do BTC em uma thread."""
-        
+        """Busca e atualiza o label da dominância do BTC em uma thread separada."""
         def update_task():
             try:
                 dominance = get_btc_dominance()
-                # Atualiza a UI na thread principal
                 self.root.after(0, lambda: self.dominance_label.config(text=dominance))
-                print(f"LOG: Dominância BTC atualizada: {dominance}")
             except Exception as e:
-                print(f"ERRO: Erro ao atualizar dominância BTC: {e}")
-                # Em caso de erro, agenda próxima tentativa
+                logging.error(f"Erro ao atualizar dominância BTC: {e}")
                 self.root.after(60000, self.update_dominance_display)
                 return
-            
-            # Agenda próxima atualização em 5 minutos
             self.root.after(300000, self.update_dominance_display)
-
         threading.Thread(target=update_task, daemon=True).start()
 
     def manual_update_prices(self):
-        """Atualiza os preços manualmente, respeitando os limites da API."""
-        # Verifica se é seguro realizar a atualização
+        """Inicia uma atualização manual dos preços, verificando os limites da API."""
         can_update, status_message = robust_services.rate_limiter.can_perform_manual_update()
-        
         if not can_update:
-            # Mostra mensagem de erro e não permite atualização
             self.update_status_label.config(text=f"⚠️ {status_message}", bootstyle="danger")
-            print(f"LOG: Atualização manual bloqueada - {status_message}")
-            
-            # Remove a mensagem após 5 segundos
             self.root.after(5000, lambda: self.update_status_label.config(text=""))
             return
         
-        # Se for seguro, mostra o status e continua
-        usage = robust_services.rate_limiter.get_current_usage()
         status_text = f"🔄 {status_message}"
         self.update_status_label.config(text=status_text, bootstyle="info")
-        
-        # Pequena pausa para mostrar o status
         self.root.after(1000, lambda: self._start_manual_update())
     
     def _start_manual_update(self):
-        """Inicia a atualização manual após verificação de segurança."""
-        # Desabilita o botão durante a atualização
+        """Prepara e inicia a thread de atualização manual."""
         self.update_button.config(state='disabled', text='Atualizando...')
         self.update_status_label.config(text="Atualizando preços...", bootstyle="warning")
-        
-        # Executa a atualização em uma thread separada para não bloquear a UI
         threading.Thread(target=self._perform_manual_update, daemon=True).start()
     
     def _perform_manual_update(self):
-        """Executa a atualização manual dos preços."""
+        """Executa a lógica de atualização manual dos preços em uma thread."""
         try:
-            # Ativa modo conservador para atualização manual
             robust_services.rate_limiter.set_manual_update_mode(True)
-            
-            # Limpa o cache para forçar atualização
             robust_services.data_cache.cache.clear()
-            print("LOG: Cache limpo para atualização manual")
+            logging.info("Cache limpo para atualização manual.")
             
-            # Força uma atualização de todos os símbolos monitorados
             monitored_symbols = [c['symbol'] for c in self.config.get('cryptos_to_monitor', [])]
             
+            from monitoring_service import run_single_symbol_update
             for i, symbol in enumerate(monitored_symbols):
-                # Respeita o rate limiting
                 robust_services.rate_limiter.wait_if_needed()
-                
-                # Atualiza dados do símbolo
-                from monitoring_service import run_single_symbol_update
                 run_single_symbol_update(symbol, self.config, self.data_queue, self.coingecko_mapping)
-                
-                # Pausa maior entre símbolos durante atualização manual
                 time.sleep(0.2)
-                
-                # Atualiza o status a cada 5 símbolos
                 if (i + 1) % 5 == 0:
-                    self.root.after(0, lambda i=i: self.update_status_label.config(
-                        text=f"Atualizando... ({i+1}/{len(monitored_symbols)})"
-                    ))
+                    self.root.after(0, lambda i=i: self.update_status_label.config(text=f"Atualizando... ({i+1}/{len(monitored_symbols)})"))
             
-            # Atualiza a dominância do BTC
             self.update_dominance_display()
-            
-            # Desativa modo conservador
-            robust_services.rate_limiter.set_manual_update_mode(False)
-            
-            # Atualiza a UI na thread principal
             self.root.after(0, self._update_complete)
             
         except Exception as e:
-            print(f"ERRO: Erro durante atualização manual: {e}")
-            # Desativa modo conservador em caso de erro
-            robust_services.rate_limiter.set_manual_update_mode(False)
+            logging.error(f"Erro durante atualização manual: {e}")
             self.root.after(0, self._update_error, str(e))
+        finally:
+            robust_services.rate_limiter.set_manual_update_mode(False)
     
     def _update_complete(self):
-        """Chamado quando a atualização manual é concluída com sucesso."""
+        """Atualiza a UI após a conclusão bem-sucedida da atualização manual."""
         self.update_button.config(state='normal', text='🔄 Atualizar Preços')
         self.update_status_label.config(text="✓ Atualizado", bootstyle="success")
-        
-        # Remove a mensagem de sucesso após 3 segundos
         self.root.after(3000, lambda: self.update_status_label.config(text=""))
     
     def check_api_status(self):
-        """Verifica o status da API e atualiza o botão dinamicamente."""
+        """Verifica periodicamente o status do rate limit da API e atualiza a UI."""
         try:
             can_update, status_message = robust_services.rate_limiter.can_perform_manual_update()
-            usage = robust_services.rate_limiter.get_current_usage()
-            
             if can_update:
-                # API segura - botão habilitado
                 self.update_button.config(state='normal', text='🔄 Atualizar Preços', bootstyle="info")
                 self.update_status_label.config(text="API: OK", bootstyle="success")
-                # Remove qualquer animação de perigo
-                self.update_button.config(bootstyle="info")
-                
             else:
-                # API em limite - botão desabilitado
                 self.update_button.config(state='disabled', text='⏸️ API Limitada', bootstyle="secondary")
                 self.update_status_label.config(text=f"API: {status_message}", bootstyle="danger")
-                # Adiciona animação de alerta (pulsar) quando a API está limitada
                 self._pulse_button(self.update_button, 'danger')
-            
-            # Agendamos a próxima verificação para garantir que o tooltip e o status estejam sempre atualizados
-            self.root.after(10000, self.check_api_status) # Verifica a cada 10 segundos
-            
+            self.root.after(10000, self.check_api_status)
         except Exception as e:
-            print(f"ERRO: Erro ao verificar status da API: {e}")
+            logging.error(f"Erro ao verificar status da API: {e}")
             self.update_status_label.config(text="API: Erro", bootstyle="danger")
             self.root.after(10000, self.check_api_status)
     
     def show_api_tooltip(self, usage):
-        """Mostra tooltip com informações detalhadas da API."""
-        tooltip_text = f"""Status da API:
-1 min: {usage['requests_1min']}/{usage['limit_1min']} ({usage['1min']:.1f}%)
-5 min: {usage['requests_5min']}/{usage['limit_5min']} ({usage['5min']:.1f}%)"""
-        
-        # Cria tooltip temporário
+        """Mostra um tooltip com informações detalhadas do uso da API."""
+        tooltip_text = f"Status da API:\n1 min: {usage['requests_1min']}/{usage['limit_1min']} ({usage['1min']:.1f}%)\n5 min: {usage['requests_5min']}/{usage['limit_5min']} ({usage['5min']:.1f}%)"
         x, y, _, _ = self.update_button.bbox("insert")
         x += self.update_button.winfo_rootx() + 25
         y += self.update_button.winfo_rooty() + 20
-        
         self.tooltip = tk.Toplevel(self.root)
         self.tooltip.wm_overrideredirect(True)
         self.tooltip.wm_geometry(f"+{x}+{y}")
-        
-        # Usa ttkb.Label para consistência de estilo
-        label = ttkb.Label(self.tooltip, text=tooltip_text, justify=tk.LEFT,
-                        background="#ffffe0", foreground="black", relief=tk.SOLID, borderwidth=1,
-                        font=("Segoe UI", 9), padding=5) # Ajuste de fonte e padding
+        label = ttkb.Label(self.tooltip, text=tooltip_text, justify=tk.LEFT, background="#ffffe0", foreground="black", relief=tk.SOLID, borderwidth=1, font=("Segoe UI", 9), padding=5)
         label.pack()
-        
-        # Remove tooltip após 3 segundos
         self.root.after(3000, lambda: self.tooltip.destroy() if hasattr(self, 'tooltip') else None)
 
     def _update_error(self, error_msg):
-        """Chamado quando há erro na atualização manual."""
+        """Atualiza a UI em caso de erro na atualização manual."""
         self.update_button.config(state='normal', text='🔄 Atualizar Preços')
         self.update_status_label.config(text="✗ Erro", bootstyle="danger")
-        
-        # Remove a mensagem de erro após 5 segundos
         self.root.after(5000, lambda: self.update_status_label.config(text=""))
 
     def _on_mousewheel(self, event):
-        """Manipula o evento de rolagem do mouse para o canvas"""
+        """Permite a rolagem da lista de cards com o scroll do mouse."""
         self.canvas.yview_scroll(int(-1*(event.delta/120)), "units")
         
-    def _pulse_label(self, label, color_style):
-        """
-        Cria um efeito de pulsação no label para destacar mudanças de preço
-        """
-        # Salva o estilo atual
-        original_style = label.cget('bootstyle')
-        
-        # Sequência de pulsação: forte -> fraco -> normal
-        self.root.after(0, lambda: label.config(bootstyle=f"{color_style}"))
-        self.root.after(600, lambda: label.config(bootstyle=f"{color_style}-outline"))
-        self.root.after(1200, lambda: label.config(bootstyle=original_style))
-
     def _pulse_button(self, button, color_style):
-        """
-        Cria um efeito de pulsação no botão para destacar um estado de alerta (ex: API limitada).
-        """
-        # Evita múltiplas animações sobrepostas no mesmo botão
-        if hasattr(button, '_pulsing') and button._pulsing:
-            return
-
+        """Cria um efeito de pulsação visual em um botão."""
+        if hasattr(button, '_pulsing') and button._pulsing: return
         button._pulsing = True
         original_style = button.cget('bootstyle')
-
         def animate_pulse(count=0):
-            if not button.winfo_exists(): # Verifica se o botão ainda existe
+            if not button.winfo_exists():
                 button._pulsing = False
                 return
-
-            if count % 2 == 0:
-                button.config(bootstyle=f"{color_style}")
-            else:
-                button.config(bootstyle=f"{color_style}-outline")
-            
-            if button._pulsing: # Continua a animar apenas se ainda estiver "pulsando"
-                self.root.after(500, lambda: animate_pulse(count + 1))
-            else:
-                button.config(bootstyle=original_style) # Volta ao estilo original
-
-        animate_pulse() # Inicia a animação
+            if count % 2 == 0: button.config(bootstyle=f"{color_style}")
+            else: button.config(bootstyle=f"{color_style}-outline")
+            if button._pulsing: self.root.after(500, lambda: animate_pulse(count + 1))
+            else: button.config(bootstyle=original_style)
+        animate_pulse()
 
 def get_current_config():
-    """Retorna a configuração atual do aplicativo."""
+    """Carrega a configuração do aplicativo a partir do arquivo config.json."""
     config_path = os.path.join(get_application_path(), "config.json")
     try:
-        with open(config_path, 'r', encoding='utf-8') as f:
-            return json.load(f)
+        with open(config_path, 'r', encoding='utf-8') as f: return json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
-        return {
-            "cryptos_to_monitor": [],
-            "telegram_bot_token": "",
-            "telegram_chat_id": "",
-            "check_interval_seconds": 300
-        }
+        return {"cryptos_to_monitor": [], "telegram_bot_token": "", "telegram_chat_id": "", "check_interval_seconds": 300}
 
 if __name__ == "__main__":
     config = get_current_config()
-    
     if 'market_analysis_config' not in config:
-        config['market_analysis_config'] = {
-            'top_n': 25,
-            'min_market_cap': 50000000
-        }
+        config['market_analysis_config'] = {'top_n': 25, 'min_market_cap': 50000000}
         
     all_symbols_list = fetch_all_binance_symbols_startup(config)
     
