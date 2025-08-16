@@ -639,7 +639,7 @@ class ManageSymbolsDialog(ttkb.Toplevel):
             
     def _populate_lists(self):
         """Preenche as listas de moedas disponíveis e monitoradas."""
-        self.all_symbols_master = sorted([coin.get('symbol') for coin in self.parent_app.monitoring_service.all_cg_coins_list if coin.get('symbol')])
+        self.all_symbols_master = self.parent_app.all_symbols
         monitored_symbols = {crypto['symbol'] for crypto in self.parent_app.config.get("cryptos_to_monitor", [])}
         self.available_listbox.delete(0, tk.END); self.monitored_listbox.delete(0, tk.END)
         for symbol in self.all_symbols_master:
