@@ -1,9 +1,11 @@
 import requests
-import winsound
 import os
 import sys
-import ctypes
 import datetime
+try:
+    import winsound
+except ImportError:
+    winsound = None
 import json
 import tkinter as tk
 from tkinter import ttk
@@ -252,6 +254,9 @@ def play_alert_sound(sound_path_str):
     if not sound_path_str:
         print("LOG: Nenhum caminho de som fornecido.")
         return
+    if not winsound:
+        print("LOG: winsound module not available, cannot play sound.")
+        return
 
     sound_path = sound_path_str if os.path.isabs(sound_path_str) else os.path.join(get_application_path(), sound_path_str)
 
@@ -263,13 +268,6 @@ def play_alert_sound(sound_path_str):
             print(f"ERRO: Não foi possível tocar o som '{sound_path}': {e}")
     else:
         print(f"ERRO: Arquivo de som não encontrado em '{sound_path}'.")
-
-def show_windows_ok_popup(title, message):
-    """Exibe um pop-up nativo do Windows com um botão OK."""
-    try:
-        ctypes.windll.user32.MessageBoxW(None, str(message), str(title), 0x00000040 | 0x00001000)
-    except Exception as e:
-        print(f"ERRO: Não foi possível exibir o pop-up: {e}")
 
 def send_telegram_alert(bot_token, chat_id, message):
     """Envia uma mensagem de alerta para um chat do Telegram."""
