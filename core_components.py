@@ -799,6 +799,10 @@ class AlertHistoryWindow(ttkb.Toplevel):
         self.geometry("1100x600")
         self.transient(self.master)
         self.grab_set()
+        self.resizable(True, True)
+
+        # Adiciona a capacidade de maximizar a janela
+        self.maximizable = True
         
         main_container = ttkb.Frame(self, padding=15, bootstyle="dark")
         main_container.pack(expand=True, fill='both')
@@ -902,12 +906,18 @@ class AlertHistoryWindow(ttkb.Toplevel):
         if search_term:
             filtered_data = [r for r in filtered_data if search_term in r.get('symbol','').lower() or search_term in r.get('trigger','').lower()]
             
-        for record in filtered_data:
-            try: dt = datetime.fromisoformat(record.get('timestamp', '')); formatted_time = dt.strftime("%d/%m/%Y %H:%M:%S")
-            except: formatted_time = record.get('timestamp', 'N/A')
+        for i, record in enumerate(filtered_data):
+            try:
+                dt = datetime.fromisoformat(record.get('timestamp', ''))
+                formatted_time = dt.strftime("%d/%m/%Y %H:%M:%S")
+            except (ValueError, TypeError):
+                formatted_time = record.get('timestamp', 'N/A')
+
             trigger = record.get('trigger', 'N/A')
             trigger_icon = "💲" if 'preço' in trigger.lower() else "📊" if 'rsi' in trigger.lower() else "📈" if 'bollinger' in trigger.lower() else "📉" if 'macd' in trigger.lower() else "✖️" if 'cruz' in trigger.lower() else "💰" if 'capital' in trigger.lower() else "⚠️"
-            self.tree.insert('', tk.END, iid=self.history_data.index(record), values=(formatted_time, record.get('symbol', 'N/A'), f"{trigger_icon} {trigger}"), tags=('alert',))
+
+            # Usar um iid único para cada item na visualização filtrada
+            self.tree.insert('', tk.END, iid=f"item_{i}", values=(formatted_time, record.get('symbol', 'N/A'), f"{trigger_icon} {trigger}"), tags=('alert',))
             
         self.status_label.config(text=f"{len(self.tree.get_children())} alertas encontrados")
             
@@ -941,7 +951,8 @@ class AlertHistoryWindow(ttkb.Toplevel):
         ttkb.Label(left_col, text="Símbolo:", font=("Segoe UI", 10, "bold"), bootstyle="secondary").grid(row=0, column=0, sticky="w", pady=3)
         ttkb.Label(left_col, text=record.get('symbol', 'N/A'), font=("Segoe UI", 10, "bold"), bootstyle="info").grid(row=0, column=1, sticky="w", pady=3, padx=5)
         ttkb.Label(left_col, text="Gatilho:", font=("Segoe UI", 10, "bold"), bootstyle="secondary").grid(row=1, column=0, sticky="w", pady=3)
-        ttkb.Label(left_col, text=record.get('trigger', 'N/A'), font=("Segoe UI", 10), bootstyle="light").grid(row=1, column=1, sticky="w", pady=3, padx=5)
+        trigger_label = ttkb.Label(left_col, text=record.get('trigger', 'N/A'), font=("Segoe UI", 10), bootstyle="light", wraplength=400)
+        trigger_label.grid(row=1, column=1, sticky="w", pady=3, padx=5)
 
         ttkb.Label(right_col, text="Data/Hora:", font=("Segoe UI", 10, "bold"), bootstyle="secondary").grid(row=0, column=0, sticky="w", pady=3)
         ttkb.Label(right_col, text=formatted_time, font=("Segoe UI", 10), bootstyle="light").grid(row=0, column=1, sticky="w", pady=3, padx=5)
