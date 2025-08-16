@@ -24,9 +24,14 @@ TOOLTIP_DEFINITIONS = {
 }
 
 def get_application_path():
-    """Retorna o caminho do diretório da aplicação."""
+    """Retorna o caminho do diretório da aplicação, compatível com PyInstaller."""
     if getattr(sys, 'frozen', False):
-        return os.path.dirname(sys.executable)
+        # Para um aplicativo 'onefile', o caminho correto é sys._MEIPASS
+        # Para um aplicativo 'onedir', o caminho correto é o diretório do executável
+        if hasattr(sys, '_MEIPASS'):
+            return sys._MEIPASS
+        else:
+            return os.path.dirname(sys.executable)
     return os.path.dirname(os.path.abspath(__file__))
 
 class CryptoCard(ttkb.Frame):
