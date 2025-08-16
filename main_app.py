@@ -345,7 +345,9 @@ class CryptoApp:
         """Busca e atualiza o label da dominância do BTC em uma thread separada."""
         def update_task():
             try:
+                logging.info("Buscando dominância do BTC...")
                 dominance = get_btc_dominance()
+                logging.info(f"Valor da dominância recebido: {dominance}")
                 self.root.after(0, lambda: self.dominance_label.config(text=dominance))
             except Exception as e:
                 logging.error(f"Erro ao atualizar dominância BTC: {e}")
