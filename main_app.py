@@ -28,6 +28,7 @@ from api_config_window import ApiConfigWindow
 from capital_flow_window import CapitalFlowWindow
 from token_movers_window import TokenMoversWindow
 from sound_config_window import SoundConfigWindow
+from coin_manager import CoinManager
 
 try:
     from PIL import Image, ImageTk
@@ -37,11 +38,12 @@ except ImportError:
 
 class CryptoApp:
     """Classe principal da aplicação que gerencia a UI e os serviços de backend."""
-    def __init__(self, root, config, all_symbols):
+    def __init__(self, root, config, all_symbols, coin_manager):
         """Inicializa a aplicação, configura a UI e inicia os serviços."""
         self.root = root
         self.config = config
         self.all_symbols = all_symbols
+        self.coin_manager = coin_manager
         self.coingecko_mapping = get_coingecko_global_mapping()
         self.data_queue = queue.Queue()
         self.monitoring_thread = None
@@ -299,7 +301,7 @@ class CryptoApp:
 
     def show_alert_manager(self):
         """Abre a janela do gerenciador de alertas."""
-        AlertManagerWindow(self)
+        AlertManagerWindow(self, self.coin_manager)
 
     def show_capital_flow_window(self):
         """Abre a janela de análise de fluxo de capital."""
@@ -472,6 +474,8 @@ if __name__ == "__main__":
         
     all_symbols_list = fetch_all_binance_symbols_startup(config)
     
+    coin_manager = CoinManager()
+
     startup_root = ttkb.Window(themename="darkly")
     
     if not config.get("cryptos_to_monitor"):
@@ -481,6 +485,6 @@ if __name__ == "__main__":
         if not config_dialog.session_started:
             sys.exit("Configuração inicial cancelada.")
             
-    app = CryptoApp(startup_root, config, all_symbols_list)
+    app = CryptoApp(startup_root, config, all_symbols_list, coin_manager)
     startup_root.protocol("WM_DELETE_WINDOW", app.on_closing)
     startup_root.mainloop()

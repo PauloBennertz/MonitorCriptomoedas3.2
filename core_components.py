@@ -2,7 +2,10 @@ import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import os
 import sys
-import winsound
+try:
+    import winsound
+except ImportError:
+    winsound = None
 import ttkbootstrap as ttkb
 
 TOOLTIP_DEFINITIONS = {
@@ -406,6 +409,11 @@ class AlertConfigDialog(ttkb.Toplevel):
         """Toca o som de alerta selecionado como uma prévia."""
         if not (sound_path_str := self.sound_var.get()):
             messagebox.showwarning("Aviso", "Nenhum arquivo de som selecionado.", parent=self); return
+
+        if not winsound:
+            messagebox.showwarning("Aviso", "O módulo de som não está disponível neste sistema.", parent=self)
+            return
+
         sound_path = sound_path_str if os.path.isabs(sound_path_str) else os.path.join(get_application_path(), sound_path_str)
         if os.path.exists(sound_path):
             try: winsound.PlaySound(sound_path, winsound.SND_FILENAME | winsound.SND_ASYNC)
@@ -443,10 +451,11 @@ class AlertConfigDialog(ttkb.Toplevel):
 
 class AlertManagerWindow(ttkb.Toplevel):
     """Janela para gerenciar (adicionar/remover/configurar) todas as moedas monitoradas."""
-    def __init__(self, parent_app):
+    def __init__(self, parent_app, coin_manager):
         """Inicializa o gerenciador de alertas."""
         super().__init__(parent_app)
         self.parent_app = parent_app
+        self.coin_manager = coin_manager
         self.title("Gerenciador de Alertas")
         self.geometry("1200x700")
         self.transient(self.master)
@@ -593,17 +602,18 @@ class AlertManagerWindow(ttkb.Toplevel):
 
     def manage_monitored_symbols(self):
         """Abre a janela de diálogo para adicionar/remover moedas."""
-        dialog = ManageSymbolsDialog(self)
+        dialog = ManageSymbolsDialog(self, self.coin_manager)
         self.wait_window(dialog)
         self._populate_symbols_tree()
 
 class ManageSymbolsDialog(ttkb.Toplevel):
     """Janela de diálogo para adicionar e remover moedas da lista de monitoramento."""
-    def __init__(self, parent_manager):
+    def __init__(self, parent_manager, coin_manager):
         """Inicializa o diálogo de gerenciamento de moedas."""
         super().__init__(parent_manager.parent_app)
         self.parent_app = parent_manager.parent_app
         self.parent_manager = parent_manager
+        self.coin_manager = coin_manager
         self.title("Gerenciar Moedas Monitoradas")
         self.geometry("800x600")
         self.transient(self.master)
@@ -639,67 +649,142 @@ class ManageSymbolsDialog(ttkb.Toplevel):
             
     def _populate_lists(self):
         """Preenche as listas de moedas disponíveis e monitoradas."""
-        self.all_symbols_master = sorted([coin.get('symbol') for coin in self.parent_app.monitoring_service.all_cg_coins_list if coin.get('symbol')])
+        all_coins_data = self.coin_manager.get_all_coins()
+        if not all_coins_data:
+            messagebox.showerror("Erro", "Não foi possível carregar a lista de moedas. Verifique sua conexão ou o arquivo all_coins.json.", parent=self)
+            return
+
+        self.all_symbols_master = sorted(
+            [f"{coin['name']} ({coin['symbol'].upper()})" for coin in all_coins_data if 'name' in coin and 'symbol' in coin],
+            key=lambda x: x.lower()
+        )
+
         monitored_symbols = {crypto['symbol'] for crypto in self.parent_app.config.get("cryptos_to_monitor", [])}
-        self.available_listbox.delete(0, tk.END); self.monitored_listbox.delete(0, tk.END)
-        for symbol in self.all_symbols_master:
-            if symbol not in monitored_symbols: self.available_listbox.insert(tk.END, symbol)
-        for symbol in sorted(list(monitored_symbols)): self.monitored_listbox.insert(tk.END, symbol)
+
+        self.available_listbox.delete(0, tk.END)
+        self.monitored_listbox.delete(0, tk.END)
+
+        for display_name in self.all_symbols_master:
+            symbol = self.coin_manager.get_symbol_from_display_name(display_name)
+            if symbol and symbol not in monitored_symbols:
+                self.available_listbox.insert(tk.END, display_name)
+
+        for symbol in sorted(list(monitored_symbols)):
+            # Find the display name for the monitored symbol
+            display_name = next((d_name for d_name in self.all_symbols_master if self.coin_manager.get_symbol_from_display_name(d_name) == symbol), symbol)
+            self.monitored_listbox.insert(tk.END, display_name)
         
     def _filter_available(self, *args):
         """Filtra a lista de moedas disponíveis com base na busca."""
-        search_term = self.available_search_var.get().upper()
+        search_term = self.available_search_var.get().lower()
         self.available_listbox.delete(0, tk.END)
-        monitored_symbols = set(self.monitored_listbox.get(0, tk.END))
-        for symbol in self.all_symbols_master:
-            if search_term in symbol.upper() and symbol not in monitored_symbols: self.available_listbox.insert(tk.END, symbol)
-            
+        monitored_display_names = set(self.monitored_listbox.get(0, tk.END))
+
+        for display_name in self.all_symbols_master:
+            if search_term in display_name.lower() and display_name not in monitored_display_names:
+                self.available_listbox.insert(tk.END, display_name)
+
     def _filter_monitored(self, *args):
         """Filtra a lista de moedas monitoradas com base na busca."""
-        search_term = self.monitored_search_var.get().upper()
-        current_monitored = sorted([c['symbol'] for c in self.parent_app.config.get("cryptos_to_monitor", [])])
+        search_term = self.monitored_search_var.get().lower()
         self.monitored_listbox.delete(0, tk.END)
-        for symbol in current_monitored:
-            if search_term in symbol.upper(): self.monitored_listbox.insert(tk.END, symbol)
-            
+
+        monitored_symbols = {crypto['symbol'] for crypto in self.parent_app.config.get("cryptos_to_monitor", [])}
+        for symbol in sorted(list(monitored_symbols)):
+            display_name = next((d_name for d_name in self.all_symbols_master if self.coin_manager.get_symbol_from_display_name(d_name) == symbol), symbol)
+            if search_term in display_name.lower():
+                self.monitored_listbox.insert(tk.END, display_name)
+
     def _add_symbols(self):
         """Adiciona os símbolos selecionados à lista de moedas monitoradas."""
         selected_indices = self.available_listbox.curselection()
         if not selected_indices: return
-        symbols_to_move = [self.available_listbox.get(i) for i in selected_indices]
-        for i in sorted(selected_indices, reverse=True): self.available_listbox.delete(i)
+
+        items_to_move = [self.available_listbox.get(i) for i in selected_indices]
+
+        # Adicionar à lista de monitorados
         current_monitored = list(self.monitored_listbox.get(0, tk.END))
-        for symbol in symbols_to_move:
-            if symbol not in current_monitored: current_monitored.append(symbol)
+        for item in items_to_move:
+            if item not in current_monitored:
+                current_monitored.append(item)
+
         self.monitored_listbox.delete(0, tk.END)
-        for symbol in sorted(current_monitored): self.monitored_listbox.insert(tk.END, symbol)
+        for item in sorted(current_monitored):
+            self.monitored_listbox.insert(tk.END, item)
+
+        # Remover da lista de disponíveis
+        for i in sorted(selected_indices, reverse=True):
+            self.available_listbox.delete(i)
 
     def _remove_symbols(self):
         """Remove os símbolos selecionados da lista de moedas monitoradas."""
         selected_indices = self.monitored_listbox.curselection()
         if not selected_indices: return
-        symbols_to_move = [self.monitored_listbox.get(i) for i in selected_indices]
-        for i in sorted(selected_indices, reverse=True): self.monitored_listbox.delete(i)
+
+        items_to_move = [self.monitored_listbox.get(i) for i in selected_indices]
+
+        # Adicionar de volta à lista de disponíveis
         current_available = list(self.available_listbox.get(0, tk.END))
-        for symbol in symbols_to_move:
-            if symbol not in current_available: current_available.append(symbol)
-        self.available_listbox.delete(0, tk.END)
-        for symbol in sorted(current_available): self.available_listbox.insert(tk.END, symbol)
+        for item in items_to_move:
+            if item not in current_available:
+                current_available.append(item)
         
+        self.available_listbox.delete(0, tk.END)
+        for item in sorted(current_available):
+            self.available_listbox.insert(tk.END, item)
+
+        # Remover da lista de monitorados
+        for i in sorted(selected_indices, reverse=True):
+            self.monitored_listbox.delete(i)
+
     def on_save(self):
         """Salva a nova lista de moedas monitoradas na configuração."""
-        new_monitored_symbols = set(self.monitored_listbox.get(0, tk.END))
+        new_monitored_display_names = self.monitored_listbox.get(0, tk.END)
+
+        new_monitored_symbols = {self.coin_manager.get_symbol_from_display_name(d_name) for d_name in new_monitored_display_names}
+        new_monitored_symbols = {s for s in new_monitored_symbols if s} # Remover Nones
+
         current_configs = {crypto['symbol']: crypto for crypto in self.parent_app.config.get("cryptos_to_monitor", [])}
+
         new_config_list = []
         for symbol in sorted(list(new_monitored_symbols)):
             if symbol in current_configs:
                 new_config_list.append(current_configs[symbol])
             else:
-                new_config_list.append({"symbol": symbol})
+                # Adicionar uma configuração padrão para a nova moeda
+                new_config_list.append({
+                    "symbol": symbol,
+                    "alert_config": self._get_default_alert_config()
+                })
+
         self.parent_app.config["cryptos_to_monitor"] = new_config_list
         self.parent_app.save_config()
+        self.parent_app.update_coin_cards_display() # Atualiza a tela principal
+        self.parent_manager._populate_symbols_tree() # Atualiza a lista no AlertManagerWindow
         messagebox.showinfo("Sucesso", "Lista de moedas atualizada.", parent=self)
         self.destroy()
+
+    def _get_default_alert_config(self):
+        """Retorna uma configuração de alerta padrão para uma nova moeda."""
+        return {
+            "notes": "",
+            "sound": "sons/Alerta.mp3",
+            "conditions": {
+                "preco_baixo": {"enabled": False, "value": 0.0},
+                "preco_alto": {"enabled": False, "value": 0.0},
+                "rsi_sobrevendido": {"enabled": True, "value": 30.0},
+                "rsi_sobrecomprado": {"enabled": True, "value": 70.0},
+                "bollinger_abaixo": {"enabled": True},
+                "bollinger_acima": {"enabled": True},
+                "macd_cruz_baixa": {"enabled": True},
+                "macd_cruz_alta": {"enabled": True},
+                "mme_cruz_morte": {"enabled": True},
+                "mme_cruz_dourada": {"enabled": True},
+                "fuga_capital_significativa": {"enabled": False, "value": "0.5, -2.0"},
+                "entrada_capital_significativa": {"enabled": False, "value": "0.3, 1.0"}
+            },
+            "triggered_conditions": []
+        }
 
 class AlertHistoryWindow(ttkb.Toplevel):
     """Janela para exibir o histórico de todos os alertas disparados."""
