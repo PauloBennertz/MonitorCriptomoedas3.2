@@ -16,8 +16,8 @@ class SoundConfigWindow:
         # Cria a janela
         self.window = ttkb.Toplevel(parent_window)
         self.window.title("🔊 Configuração de Sons")
-        self.window.geometry("500x600")
-        self.window.resizable(False, False)
+        self.window.geometry("550x700") # Aumentado o tamanho padrão
+        self.window.resizable(True, True) # Permitir redimensionamento
         
         # Centraliza a janela
         self._center_window()
@@ -63,6 +63,9 @@ class SoundConfigWindow:
         
         canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
+
+        self.canvas = canvas
+        self.window.bind_all("<MouseWheel>", self._on_mousewheel)
         
         # Configurações de som
         self._create_sound_configs(scrollable_frame)
@@ -131,6 +134,13 @@ class SoundConfigWindow:
                                text="💡 Dica: Use arquivos .wav ou .mp3. O som 'Múltiplos Alertas' será usado quando vários alertas aparecerem simultaneamente.",
                                wraplength=450, justify=tk.LEFT, bootstyle="secondary")
         info_label.pack()
+
+    def _on_mousewheel(self, event):
+        """Permite a rolagem da lista com o scroll do mouse."""
+        if event.num == 5 or event.delta == -120:
+            self.canvas.yview_scroll(1, "units")
+        elif event.num == 4 or event.delta == 120:
+            self.canvas.yview_scroll(-1, "units")
     
     def _browse_sound_file(self, key, path_var):
         """Abre diálogo para selecionar arquivo de som."""
