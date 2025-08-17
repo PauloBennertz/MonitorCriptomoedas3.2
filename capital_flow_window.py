@@ -40,11 +40,21 @@ class CapitalFlowWindow(ttkb.Toplevel): # CORREÇÃO: Usar ttkb.Toplevel para co
         
 
     def setup_ui(self):
-        main_frame = ttkb.Frame(self, padding=10)
+        main_frame = ttkb.Frame(self, padding=15, relief="solid", borderwidth=1)
         main_frame.pack(expand=True, fill='both')
 
+        text_frame = ttkb.Frame(main_frame, relief="solid", borderwidth=1)
+        text_frame.pack(expand=True, fill='both', pady=(0, 10))
+        self.text_widget = tk.Text(text_frame, wrap='word', font=("Consolas", 11),
+                                   bg="#23272b", fg="#f8f9fa", insertbackground="#f8f9fa",
+                                   state='disabled', relief='flat')
+        scrollbar = ttkb.Scrollbar(text_frame, orient='vertical', command=self.text_widget.yview)
+        self.text_widget['yscrollcommand'] = scrollbar.set
+        scrollbar.pack(side='right', fill='y')
+        self.text_widget.pack(side='left', expand=True, fill='both')
+
         button_frame = ttkb.Frame(main_frame)
-        button_frame.pack(pady=(0, 10), fill='x')
+        button_frame.pack(fill='x')
 
         self.run_button = ttkb.Button(button_frame, text="🔄 Atualizar Análise",
                                       command=self.start_analysis_thread, bootstyle="info")
@@ -53,16 +63,6 @@ class CapitalFlowWindow(ttkb.Toplevel): # CORREÇÃO: Usar ttkb.Toplevel para co
         self.config_button = ttkb.Button(button_frame, text="⚙️ Configurações",
                                          command=self.open_settings, bootstyle="secondary")
         self.config_button.pack(side='left', padx=(5, 0))
-
-        text_frame = ttkb.Frame(main_frame)
-        text_frame.pack(expand=True, fill='both')
-        self.text_widget = tk.Text(text_frame, wrap='word', font=("Consolas", 11),
-                                   bg="#23272b", fg="#f8f9fa", insertbackground="#f8f9fa",
-                                   state='disabled', relief='flat')
-        scrollbar = ttkb.Scrollbar(text_frame, orient='vertical', command=self.text_widget.yview)
-        self.text_widget['yscrollcommand'] = scrollbar.set
-        scrollbar.pack(side='right', fill='y')
-        self.text_widget.pack(side='left', expand=True, fill='both')
 
     def open_settings(self):
         """Abre a nova janela de configurações."""

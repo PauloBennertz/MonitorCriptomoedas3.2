@@ -15,7 +15,7 @@ class SoundConfigWindow:
         
         # Cria a janela
         self.window = ttkb.Toplevel(parent_window)
-        self.window.title("🔊 Configuração de Sons")
+        self.window.title("Configuração de Sons")
         self.window.geometry("550x700") # Aumentado o tamanho padrão
         self.window.resizable(True, True) # Permitir redimensionamento
         
@@ -44,11 +44,11 @@ class SoundConfigWindow:
     def _create_ui(self):
         """Cria a interface da janela."""
         # Frame principal
-        main_frame = ttkb.Frame(self.window, padding="20")
+        main_frame = ttkb.Frame(self.window, padding=15, relief="solid", borderwidth=1)
         main_frame.pack(fill=tk.BOTH, expand=True)
         
         # Título
-        title_label = ttkb.Label(main_frame, text="🔊 Configuração de Sons de Alerta", 
+        title_label = ttkb.Label(main_frame, text="Configuração de Sons de Alerta",
                                 font=("-weight bold", 16), bootstyle="primary")
         title_label.pack(pady=(0, 20))
         
@@ -90,7 +90,7 @@ class SoundConfigWindow:
         ]
         
         # Título da seção
-        section_label = ttkb.Label(parent_frame, text="🎵 Configurar Sons por Tipo de Alerta", 
+        section_label = ttkb.Label(parent_frame, text="Configurar Sons por Tipo de Alerta",
                                   font=("-weight bold", 12), bootstyle="info")
         section_label.pack(pady=(0, 15))
         
@@ -115,15 +115,15 @@ class SoundConfigWindow:
             path_entry.pack(side="left", padx=(5, 5))
             
             # Botão para selecionar arquivo
-            browse_button = ttkb.Button(config_frame, text="📁", 
+            browse_button = ttkb.Button(config_frame, text="Procurar",
                                        command=lambda k=key, v=path_var: self._browse_sound_file(k, v),
-                                       bootstyle="outline-secondary", width=3)
+                                       bootstyle="outline-secondary")
             browse_button.pack(side="left", padx=(0, 5))
             
             # Botão para testar som
-            test_button = ttkb.Button(config_frame, text="▶️", 
+            test_button = ttkb.Button(config_frame, text="Testar",
                                      command=lambda v=path_var: self._test_sound(v.get()),
-                                     bootstyle="outline-success", width=3)
+                                     bootstyle="outline-success")
             test_button.pack(side="left")
         
         # Seção de informações
@@ -176,21 +176,21 @@ class SoundConfigWindow:
         button_frame.pack(fill=tk.X, pady=(20, 0))
         
         # Botão Salvar
-        save_button = ttkb.Button(button_frame, text="💾 Salvar Configurações", 
+        save_button = ttkb.Button(button_frame, text="Salvar",
                                  command=self._save_config,
-                                 bootstyle="success", width=20)
+                                 bootstyle="success")
         save_button.pack(side="right", padx=(5, 0))
         
         # Botão Cancelar
-        cancel_button = ttkb.Button(button_frame, text="❌ Cancelar", 
+        cancel_button = ttkb.Button(button_frame, text="Cancelar",
                                    command=self._close_window,
-                                   bootstyle="danger", width=15)
+                                   bootstyle="danger")
         cancel_button.pack(side="right")
         
         # Botão Restaurar Padrões
-        reset_button = ttkb.Button(button_frame, text="🔄 Restaurar Padrões", 
+        reset_button = ttkb.Button(button_frame, text="Restaurar Padrões",
                                   command=self._reset_defaults,
-                                  bootstyle="warning", width=18)
+                                  bootstyle="warning")
         reset_button.pack(side="left")
     
     def _save_config(self):
