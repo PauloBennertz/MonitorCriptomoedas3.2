@@ -121,7 +121,7 @@ class StartupConfigDialog(ttkb.Toplevel):
         self.grab_set()
         self.geometry("800x600")
 
-        main_frame = ttkb.Frame(self, padding=15)
+        main_frame = ttkb.Frame(self, padding=15, relief="solid", borderwidth=1)
         main_frame.pack(expand=True, fill='both')
 
         telegram_frame = ttkb.LabelFrame(main_frame, text="Configuração do Telegram", padding=15)
@@ -265,7 +265,7 @@ class AlertConfigDialog(ttkb.Toplevel):
         self.config_data = alert_config_data if alert_config_data else self._get_default_config()
         self.vars = {} 
         
-        main_container = ttkb.Frame(self, bootstyle="dark", padding=20)
+        main_container = ttkb.Frame(self, bootstyle="dark", padding=15, relief="solid", borderwidth=1)
         main_container.pack(expand=True, fill="both")
         
         header_frame = ttkb.Frame(main_container, bootstyle="dark")
@@ -280,7 +280,7 @@ class AlertConfigDialog(ttkb.Toplevel):
         notes_frame = ttkb.Frame(common_frame, bootstyle="dark")
         notes_frame.pack(fill="x", pady=5)
         
-        ttkb.Label(notes_frame, text="📝 Observações:", font=("Segoe UI", 10, "bold"), bootstyle="light").pack(side="left")
+        ttkb.Label(notes_frame, text="Observações:", font=("Segoe UI", 10, "bold"), bootstyle="light").pack(side="left")
         self.notes_var = ttkb.StringVar(value=self.config_data.get('notes', ''))
         self.notes_entry = ttkb.Entry(notes_frame, textvariable=self.notes_var, font=("Segoe UI", 10), bootstyle="dark")
         self.notes_entry.pack(side="left", fill="x", expand=True, padx=(10, 0))
@@ -288,7 +288,7 @@ class AlertConfigDialog(ttkb.Toplevel):
         sound_frame = ttkb.Frame(common_frame, bootstyle="dark")
         sound_frame.pack(fill="x", pady=10)
         
-        ttkb.Label(sound_frame, text="🔊 Arquivo de Som:", font=("Segoe UI", 10, "bold"), bootstyle="light").pack(side="left")
+        ttkb.Label(sound_frame, text="Arquivo de Som:", font=("Segoe UI", 10, "bold"), bootstyle="light").pack(side="left")
         
         sound_controls = ttkb.Frame(sound_frame, bootstyle="dark")
         sound_controls.pack(side="left", fill="x", expand=True, padx=(10, 0))
@@ -297,8 +297,8 @@ class AlertConfigDialog(ttkb.Toplevel):
         self.sound_entry = ttkb.Entry(sound_controls, textvariable=self.sound_var, state="readonly", font=("Segoe UI", 10), bootstyle="dark")
         self.sound_entry.pack(side="left", fill="x", expand=True)
         
-        ttkb.Button(sound_controls, text="📁", command=self.browse_sound_file, bootstyle="info", width=3).pack(side="left", padx=5)
-        ttkb.Button(sound_controls, text="▶", command=self.preview_sound, bootstyle="success", width=3).pack(side="left")
+        ttkb.Button(sound_controls, text="Procurar", command=self.browse_sound_file, bootstyle="info").pack(side="left", padx=5)
+        ttkb.Button(sound_controls, text="Testar", command=self.preview_sound, bootstyle="success").pack(side="left")
 
         ttkb.Separator(main_container, bootstyle="info").pack(fill="x", pady=10)
         
@@ -307,7 +307,7 @@ class AlertConfigDialog(ttkb.Toplevel):
         
         ttkb.Label(conditions_header, text="Gatilhos de Alerta", font=("Segoe UI", 14, "bold"), bootstyle="info").pack(side="left")
 
-        help_button = ttkb.Button(conditions_header, text="❓", bootstyle="secondary", width=3)
+        help_button = ttkb.Button(conditions_header, text="Ajuda", bootstyle="secondary")
         help_button.pack(side="right")
         
         tooltip = Tooltip(help_button)
@@ -337,8 +337,8 @@ class AlertConfigDialog(ttkb.Toplevel):
         btn_frame = ttkb.Frame(main_container, bootstyle="dark", padding=(0, 15, 0, 0))
         btn_frame.pack(side="bottom", fill="x")
         
-        ttkb.Button(btn_frame, text="✅ Salvar", command=self.on_save, bootstyle="success", padding=10).pack(side="left", padx=5)
-        ttkb.Button(btn_frame, text="❌ Cancelar", command=self.destroy, bootstyle="danger-outline", padding=10).pack(side="left", padx=5)
+        ttkb.Button(btn_frame, text="Salvar", command=self.on_save, bootstyle="success").pack(side="left", padx=5)
+        ttkb.Button(btn_frame, text="Cancelar", command=self.destroy, bootstyle="danger-outline").pack(side="left", padx=5)
 
         self.parent_app.center_toplevel_on_main(self)
         self.minsize(650, 700)
@@ -475,7 +475,7 @@ class AlertManagerWindow(ttkb.Toplevel):
         self.transient(self.master)
         self.grab_set()
         
-        main_container = ttkb.Frame(self, padding=15, bootstyle="dark")
+        main_container = ttkb.Frame(self, padding=15, bootstyle="dark", relief="solid", borderwidth=1)
         main_container.pack(expand=True, fill='both')
         
         header_frame = ttkb.Frame(main_container, bootstyle="dark")
@@ -516,7 +516,7 @@ class AlertManagerWindow(ttkb.Toplevel):
         symbols_scrollbar.pack(side="right", fill='y')
         self.symbols_tree.bind("<<TreeviewSelect>>", self.on_symbol_selected)
         
-        ttkb.Button(symbols_container, text="➕ Adicionar/Remover Moedas", command=self.manage_monitored_symbols, bootstyle="success", padding=10).pack(side='bottom', fill='x', pady=(10, 0))
+        ttkb.Button(symbols_container, text="Adicionar/Remover Moedas", command=self.manage_monitored_symbols, bootstyle="success").pack(side='bottom', fill='x', pady=(10, 0))
 
         alerts_container = ttkb.Frame(self.paned_window, padding=5, bootstyle="dark")
         self.paned_window.add(alerts_container, weight=2)
@@ -546,10 +546,10 @@ class AlertManagerWindow(ttkb.Toplevel):
         alerts_controls_frame = ttkb.Frame(alerts_container, bootstyle="dark", padding=5)
         alerts_controls_frame.pack(fill='x')
         
-        self.config_alert_btn = ttkb.Button(alerts_controls_frame, text="⚙️ Configurar Alertas", command=self.open_config_alert_dialog, bootstyle="info", state="disabled", padding=10)
+        self.config_alert_btn = ttkb.Button(alerts_controls_frame, text="Configurar Alertas", command=self.open_config_alert_dialog, bootstyle="info", state="disabled")
         self.config_alert_btn.pack(side='left', padx=5)
         
-        ttkb.Button(alerts_controls_frame, text="❓ Ajuda", bootstyle="secondary", padding=10).pack(side='right', padx=5)
+        ttkb.Button(alerts_controls_frame, text="Ajuda", bootstyle="secondary").pack(side='right', padx=5)
         
         status_bar = ttkb.Frame(main_container, bootstyle="dark", padding=(0, 10, 0, 0))
         status_bar.pack(fill='x', side="bottom")
@@ -668,7 +668,7 @@ class ManageSymbolsDialog(ttkb.Toplevel):
         self.geometry("800x600")
         self.transient(self.master)
         self.grab_set()
-        main_frame = ttkb.Frame(self, padding=10)
+        main_frame = ttkb.Frame(self, padding=15, relief="solid", borderwidth=1)
         main_frame.pack(expand=True, fill='both')
         left_frame = ttkb.LabelFrame(main_frame, text="Moedas Disponíveis", padding=10)
         left_frame.pack(side='left', fill='both', expand=True, padx=(0, 5))
@@ -853,7 +853,7 @@ class AlertHistoryWindow(ttkb.Toplevel):
         # Adiciona a capacidade de maximizar a janela
         self.maximizable = True
         
-        main_container = ttkb.Frame(self, padding=15, bootstyle="dark")
+        main_container = ttkb.Frame(self, padding=15, bootstyle="dark", relief="solid", borderwidth=1)
         main_container.pack(expand=True, fill='both')
         
         header_frame = ttkb.Frame(main_container, bootstyle="dark")
@@ -904,11 +904,11 @@ class AlertHistoryWindow(ttkb.Toplevel):
         btn_frame = ttkb.Frame(main_container, bootstyle="dark", padding=(0, 15, 0, 0))
         btn_frame.pack(fill='x')
         
-        self.analyze_btn = ttkb.Button(btn_frame, text="🔍 Análise Detalhada", command=self._open_analysis, bootstyle="info", padding=10, state="disabled")
+        self.analyze_btn = ttkb.Button(btn_frame, text="Análise Detalhada", command=self._open_analysis, bootstyle="info", state="disabled")
         self.analyze_btn.pack(side='left', padx=5)
-        ttkb.Button(btn_frame, text="🔄 Atualizar", command=self._load_history, padding=10, bootstyle="secondary").pack(side='left', padx=5)
-        ttkb.Button(btn_frame, text="🗑️ Limpar Histórico", command=self._clear_history, padding=10, bootstyle="danger-outline").pack(side='left', padx=5)
-        ttkb.Button(btn_frame, text="✖️ Fechar", command=self.destroy, padding=10, bootstyle="secondary-outline").pack(side='right', padx=5)
+        ttkb.Button(btn_frame, text="Atualizar", command=self._load_history, bootstyle="secondary").pack(side='left', padx=5)
+        ttkb.Button(btn_frame, text="Limpar Histórico", command=self._clear_history, bootstyle="danger-outline").pack(side='left', padx=5)
+        ttkb.Button(btn_frame, text="Fechar", command=self.destroy, bootstyle="secondary-outline").pack(side='right', padx=5)
         
         status_bar = ttkb.Frame(main_container, bootstyle="dark", padding=(0, 15, 0, 0))
         status_bar.pack(fill='x', side="bottom")
@@ -1048,7 +1048,7 @@ class AlertAnalysisWindow(ttkb.Toplevel):
         self.transient(parent)
         self.grab_set()
         
-        main_container = ttkb.Frame(self, bootstyle="dark", padding=20)
+        main_container = ttkb.Frame(self, bootstyle="dark", padding=15, relief="solid", borderwidth=1)
         main_container.pack(expand=True, fill='both')
         
         header_frame = ttkb.Frame(main_container, bootstyle="dark")
@@ -1106,4 +1106,4 @@ class AlertAnalysisWindow(ttkb.Toplevel):
 
         ttkb.Label(notes_frame, text=trigger_text, font=("Segoe UI", 11), bootstyle="light", wraplength=620).pack(pady=10, fill='x')
         
-        ttkb.Button(main_container, text="✖️ Fechar", command=self.destroy, bootstyle="secondary", padding=10).pack(side="right", pady=(15, 0))
+        ttkb.Button(main_container, text="Fechar", command=self.destroy, bootstyle="secondary").pack(side="right", pady=(15, 0))
