@@ -283,7 +283,7 @@ def get_btc_dominance():
         global_data = cg_client.get_global()
         
         # O valor da dominância do BTC está em 'data' -> 'market_cap_percentage' -> 'btc'
-        btc_dominance = global_data.get('data', {}).get('market_cap_percentage', {}).get('btc')
+        btc_dominance = global_data.get('market_cap_percentage', {}).get('btc')
 
         if btc_dominance is not None and isinstance(btc_dominance, (int, float)):
             result = f"{btc_dominance:.2f}%"
