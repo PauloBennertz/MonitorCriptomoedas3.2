@@ -3,6 +3,26 @@ import tkinter as tk
 import ttkbootstrap as ttkb
 from tkinter import scrolledtext
 
+ALERT_SUMMARIES = {
+    # RSI
+    'RSI_SOBRECOMPRA': "RSI > 70: Ativo pode estar supervalorizado, risco de correção.",
+    'RSI_SOBREVENDA': "RSI < 30: Ativo pode estar desvalorizado, potencial de alta.",
+    # Bandas de Bollinger
+    'PRECO_ACIMA_BANDA_SUPERIOR': "Preço acima da Banda de Bollinger Superior: Alta volatilidade, possível sobrecompra.",
+    'PRECO_ABAIXO_BANDA_INFERIOR': "Preço abaixo da Banda de Bollinger Inferior: Alta volatilidade, possível sobrevenda.",
+    # MACD
+    'CRUZAMENTO_MACD_ALTA': "MACD cruzou para cima da linha de sinal: Sinal de momentum de alta.",
+    'CRUZAMENTO_MACD_BAIXA': "MACD cruzou para baixo da linha de sinal: Sinal de momentum de baixa.",
+    # Médias Móveis
+    'CRUZ_DOURADA': "MME 50 cruzou acima da MME 200: Forte sinal de tendência de alta.",
+    'CRUZ_DA_MORTE': "MME 50 cruzou abaixo da MME 200: Forte sinal de tendência de baixa.",
+    # Padrão de Volume
+    'VOLUME_ANORMAL': "Volume de negociação significativamente acima da média. Indica forte interesse ou evento.",
+    # Padrão de Velas (Exemplo)
+    'MARTELO_ALTA': "Padrão de vela 'Martelo': Pode indicar uma reversão de baixa para alta.",
+    'ESTRELA_CADENTE_BAIXA': "Padrão de vela 'Estrela Cadente': Pode indicar uma reversão de alta para baixa."
+}
+
 class HelpWindow(ttkb.Toplevel):
     def __init__(self, parent_app):
         # CORREÇÃO AQUI: parent_app já é a instância da MainApplication, que é o root
