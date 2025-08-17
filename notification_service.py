@@ -13,6 +13,7 @@ import ttkbootstrap as ttkb
 from collections import deque
 import threading
 import time
+from help_window import ALERT_SUMMARIES
 
 def get_application_path():
     """Obtém o caminho base da aplicação, seja executável ou script."""
@@ -155,6 +156,19 @@ class AlertConsolidator:
                                       wraplength=550, justify=tk.LEFT)
             message_label.pack(fill=tk.X, pady=(5, 0))
             
+            # Resumo do Alerta (NOVO)
+            summary_text = ALERT_SUMMARIES.get(alert['trigger'], "Consulte o Guia para mais detalhes.")
+            if summary_text:
+                summary_label = ttkb.Label(
+                    alert_frame,
+                    text=f"💡 {summary_text}",
+                    wraplength=550,
+                    justify=tk.LEFT,
+                    font=("", 8, "italic"), # Fonte menor e itálico
+                    bootstyle="secondary"   # Cor mais sutil
+                )
+                summary_label.pack(fill=tk.X, pady=(5, 5))
+
             # Separador
             if i < len(alerts) - 1:
                 separator = ttkb.Separator(alert_frame, orient="horizontal")

@@ -29,7 +29,7 @@ from capital_flow_window import CapitalFlowWindow
 from token_movers_window import TokenMoversWindow
 from sound_config_window import SoundConfigWindow
 from coin_manager import CoinManager
-
+from help_window import HelpWindow
 try:
     from PIL import Image, ImageTk
 except ImportError:
@@ -89,6 +89,10 @@ class CryptoApp:
         self.menu_bar.add_cascade(label="⚙️ Configurações", menu=config_menu)
         config_menu.add_command(label="🔊 Configurar Sons", command=self.show_sound_config_window)
         config_menu.add_command(label="Chaves de API", command=self.show_api_config_window)
+
+        help_menu = tk.Menu(self.menu_bar, tearoff=0)
+        self.menu_bar.add_cascade(label="Ajuda", menu=help_menu)
+        help_menu.add_command(label="Guia de Indicadores", command=self.show_help_window)
 
         header_frame = ttkb.Frame(self.root, bootstyle="dark")
         header_frame.pack(side="top", fill="x")
@@ -329,6 +333,10 @@ class CryptoApp:
     def show_api_config_window(self):
         """Abre a janela de configuração de chaves de API."""
         ApiConfigWindow(self.root, self)
+
+    def show_help_window(self):
+        """Abre a janela de ajuda com o guia de indicadores."""
+        HelpWindow(self.root)
 
     def center_toplevel_on_main(self, toplevel_window):
         """Centraliza uma janela Toplevel em relação à janela principal."""
