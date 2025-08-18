@@ -36,15 +36,51 @@ except ImportError:
     messagebox.showerror("Biblioteca Faltando", "A biblioteca 'Pillow' é necessária. Instale com 'pip install Pillow'")
     sys.exit()
 
+class LoadingWindow(tk.Toplevel):
+    """Janela de carregamento para feedback ao usuário durante a inicialização."""
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.title("Carregando...")
+        self.geometry("300x150")
+        self.transient(parent)
+        self.grab_set()
+        self.protocol("WM_DELETE_WINDOW", lambda: None)  # Impede o fechamento
+
+        main_frame = ttkb.Frame(self, padding=20)
+        main_frame.pack(expand=True, fill="both")
+
+        self.label = ttkb.Label(main_frame, text="Iniciando...", font=("Segoe UI", 11))
+        self.label.pack(pady=(10, 5))
+
+        self.progress = ttkb.Progressbar(main_frame, mode='indeterminate', length=250)
+        self.progress.pack(pady=10)
+        self.progress.start(10)
+        self.center_on_screen()
+
+    def update_text(self, text):
+        self.label.config(text=text)
+        self.update_idletasks()
+
+    def center_on_screen(self):
+        self.update_idletasks()
+        width, height = self.winfo_width(), self.winfo_height()
+        screen_width, screen_height = self.winfo_screenwidth(), self.winfo_screenheight()
+        x = (screen_width // 2) - (width // 2)
+        y = (screen_height // 2) - (height // 2)
+        self.geometry(f'{width}x{height}+{x}+{y}')
+
+    def close(self):
+        self.destroy()
+
 class CryptoApp:
     """Classe principal da aplicação que gerencia a UI e os serviços de backend."""
-    def __init__(self, root, config, all_symbols, coin_manager):
+    def __init__(self, root, config, all_symbols, coin_manager, coingecko_mapping):
         """Inicializa a aplicação, configura a UI e inicia os serviços."""
         self.root = root
         self.config = config
         self.all_symbols = all_symbols
         self.coin_manager = coin_manager
-        self.coingecko_mapping = get_coingecko_global_mapping()
+        self.coingecko_mapping = coingecko_mapping
         self.data_queue = queue.Queue()
         self.monitoring_thread = None
         self.stop_monitoring_event = threading.Event()
@@ -479,24 +515,74 @@ def get_current_config():
     except (FileNotFoundError, json.JSONDecodeError):
         return {"cryptos_to_monitor": [], "telegram_bot_token": "", "telegram_chat_id": "", "check_interval_seconds": 300}
 
-if __name__ == "__main__":
+def fetch_initial_data(config, data_queue):
+    """Busca todos os dados iniciais necessários para a aplicação em uma thread separada."""
+    try:
+        data_queue.put({'status': 'symbols', 'data': None})
+        all_symbols = fetch_all_binance_symbols_startup(config)
+
+        data_queue.put({'status': 'mapping', 'data': None})
+        mapping = get_coingecko_global_mapping()
+
+        data_queue.put({'status': 'done', 'data': {'symbols': all_symbols, 'mapping': mapping}})
+    except Exception as e:
+        logging.critical(f"Erro crítico ao buscar dados iniciais: {e}")
+        data_queue.put({'status': 'error', 'data': str(e)})
+
+def main():
+    """Função principal que inicializa a aplicação com uma tela de carregamento."""
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
     config = get_current_config()
     if 'market_analysis_config' not in config:
         config['market_analysis_config'] = {'top_n': 25, 'min_market_cap': 50000000}
-        
-    all_symbols_list = fetch_all_binance_symbols_startup(config)
-    
-    coin_manager = CoinManager()
 
-    startup_root = ttkb.Window(themename="darkly")
+    root = ttkb.Window(themename="darkly")
+    root.withdraw()  # Esconde a janela principal inicialmente
+
+    loading_window = LoadingWindow(root)
+    
+    data_queue = queue.Queue()
+    threading.Thread(target=fetch_initial_data, args=(config, data_queue), daemon=True).start()
+
+    def check_loading_queue():
+        try:
+            message = data_queue.get_nowait()
+            if message['status'] == 'symbols':
+                loading_window.update_text("Carregando lista de moedas...")
+                root.after(100, check_loading_queue)
+            elif message['status'] == 'mapping':
+                loading_window.update_text("Carregando mapeamento de nomes...")
+                root.after(100, check_loading_queue)
+            elif message['status'] == 'done':
+                loading_window.close()
+                initial_data = message['data']
+                start_main_application(root, config, initial_data['symbols'], initial_data['mapping'])
+            elif message['status'] == 'error':
+                loading_window.close()
+                messagebox.showerror("Erro de Inicialização", f"Não foi possível iniciar a aplicação:\n{message['data']}")
+                root.destroy()
+        except queue.Empty:
+            root.after(100, check_loading_queue)
+
+    root.after(100, check_loading_queue)
+    root.mainloop()
+
+def start_main_application(root, config, all_symbols_list, coingecko_mapping):
+    """Inicia a aplicação principal após o carregamento dos dados."""
+    root.deiconify() # Mostra a janela principal
+
+    coin_manager = CoinManager()
     
     if not config.get("cryptos_to_monitor"):
-        startup_root.withdraw()
-        config_dialog = StartupConfigDialog(startup_root, all_symbols_list, config)
-        startup_root.wait_window(config_dialog)
+        config_dialog = StartupConfigDialog(root, all_symbols_list, config)
+        root.wait_window(config_dialog)
         if not config_dialog.session_started:
+            root.destroy()
             sys.exit("Configuração inicial cancelada.")
             
-    app = CryptoApp(startup_root, config, all_symbols_list, coin_manager)
-    startup_root.protocol("WM_DELETE_WINDOW", app.on_closing)
-    startup_root.mainloop()
+    app = CryptoApp(root, config, all_symbols_list, coin_manager, coingecko_mapping)
+    root.protocol("WM_DELETE_WINDOW", app.on_closing)
+
+if __name__ == "__main__":
+    main()
