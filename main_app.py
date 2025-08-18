@@ -30,6 +30,8 @@ from token_movers_window import TokenMoversWindow
 from sound_config_window import SoundConfigWindow
 from coin_manager import CoinManager
 from help_window import HelpWindow
+from app_state import get_last_fetch_timestamp, update_last_fetch_timestamp
+
 try:
     from PIL import Image, ImageTk
 except ImportError:
@@ -518,11 +520,26 @@ def get_current_config():
 def fetch_initial_data(config, data_queue):
     """Busca todos os dados iniciais necessários para a aplicação em uma thread separada."""
     try:
+        last_fetch_time = get_last_fetch_timestamp()
+        current_time = time.time()
+
+        # Se a última busca foi a menos de 5 minutos (300s), pula a busca
+        if current_time - last_fetch_time < 300:
+            data_queue.put({'status': 'skipped', 'data': "Busca de dados recentes. Usando cache."})
+            # Mesmo pulando, precisamos dos dados para iniciar a app. Assumimos que estão em cache.
+            # Esta parte pode precisar de mais robustez se o cache puder estar vazio.
+            all_symbols = fetch_all_binance_symbols_startup(config) # Pode vir do cache da exchangeInfo
+            mapping = get_coingecko_global_mapping() # Pode vir do cache da lista de moedas
+            data_queue.put({'status': 'done', 'data': {'symbols': all_symbols, 'mapping': mapping}})
+            return
+
         data_queue.put({'status': 'symbols', 'data': None})
         all_symbols = fetch_all_binance_symbols_startup(config)
 
         data_queue.put({'status': 'mapping', 'data': None})
         mapping = get_coingecko_global_mapping()
+
+        update_last_fetch_timestamp() # Atualiza o timestamp após uma busca bem sucedida
 
         data_queue.put({'status': 'done', 'data': {'symbols': all_symbols, 'mapping': mapping}})
     except Exception as e:
@@ -554,6 +571,10 @@ def main():
             elif message['status'] == 'mapping':
                 loading_window.update_text("Carregando mapeamento de nomes...")
                 root.after(100, check_loading_queue)
+            elif message['status'] == 'skipped':
+                loading_window.update_text(message['data'])
+                # Aguarda um pouco para o usuário ler a mensagem antes de prosseguir
+                root.after(1500, check_loading_queue)
             elif message['status'] == 'done':
                 loading_window.close()
                 initial_data = message['data']

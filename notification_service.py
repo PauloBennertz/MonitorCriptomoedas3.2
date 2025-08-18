@@ -53,36 +53,34 @@ class AlertConsolidator:
             print(f"LOG: Alerta adicionado à fila de consolidação: {symbol} - {trigger}")
     
     def _process_alerts(self):
-        """Processa alertas em background."""
+        """Processa alertas em background sem bloquear a thread principal."""
         while True:
-            try:
+            alerts_to_show = []
+            should_show = False
+
+            with self.alert_lock:
+                if self.pending_alerts and not self.is_showing:
+                    current_time = time.time()
+
+                    # Decide se deve iniciar um novo lote de alertas
+                    if self.last_alert_time == 0 or (current_time - self.last_alert_time) > 3.0:
+                        should_show = True
+
+            # Se decidimos mostrar, esperamos um pouco para agrupar mais alertas
+            if should_show:
+                time.sleep(2.0) # Dorme fora do lock para não bloquear a adição de novos alertas
+                
                 with self.alert_lock:
-                    if self.pending_alerts and not self.is_showing:
-                        current_time = time.time()
-                        
-                        # Se é o primeiro alerta ou se passou muito tempo desde o último
-                        if self.last_alert_time == 0 or (current_time - self.last_alert_time) > 3.0:
-                            # Aguarda um pouco para coletar mais alertas
-                            time.sleep(2.0)  # Aguarda 2 segundos para agrupar alertas
-                            
-                            # Coleta todos os alertas pendentes
-                            alerts_to_show = []
-                            while self.pending_alerts:
-                                alerts_to_show.append(self.pending_alerts.popleft())
-                            
-                            if alerts_to_show:
-                                self.last_alert_time = current_time
-                                # Mostra janela consolidada na thread principal
-                                self.parent_window.after(0, lambda: self._show_consolidated_alerts(alerts_to_show))
-                        else:
-                            # Se ainda está no período de agrupamento, aguarda mais
-                            time.sleep(0.5)
-                
-                time.sleep(0.3)  # Verifica a cada 0.3 segundos
-                
-            except Exception as e:
-                print(f"ERRO: Erro no processamento de alertas: {e}")
-                time.sleep(1)
+                    # Coleta todos os alertas que chegaram nesse meio tempo
+                    while self.pending_alerts:
+                        alerts_to_show.append(self.pending_alerts.popleft())
+
+                    if alerts_to_show:
+                        self.last_alert_time = time.time()
+                        # Agenda a exibição da janela na thread principal
+                        self.parent_window.after(0, self._show_consolidated_alerts, alerts_to_show)
+
+            time.sleep(0.3) # Loop de verificação principal
     
     def _show_consolidated_alerts(self, alerts):
         """Mostra uma janela consolidada com todos os alertas."""
