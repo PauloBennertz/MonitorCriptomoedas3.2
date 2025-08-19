@@ -63,9 +63,9 @@ class CryptoCard(ttkb.Frame):
         header_frame = ttkb.Frame(self, bootstyle="secondary")
         header_frame.pack(fill='x', pady=(0, 10))
         
-        self.symbol_label = ttkb.Label(header_frame, text=symbol, font=("Segoe UI", 14, "bold"), bootstyle="info")
+        self.symbol_label = ttkb.Label(header_frame, text=symbol, font=("Segoe UI", 16, "bold"), bootstyle="info")
         self.symbol_label.pack(side='left')
-        self.full_name_label = ttkb.Label(header_frame, text=f"({coin_name})", font=("Segoe UI", 10), bootstyle="secondary")
+        self.full_name_label = ttkb.Label(header_frame, text=f"({coin_name})", font=("Segoe UI", 11), bootstyle="secondary")
         self.full_name_label.pack(side='left', padx=5, pady=(4,0))
 
         ttkb.Separator(self, bootstyle="dark").pack(fill='x', pady=(5, 10))
@@ -73,8 +73,8 @@ class CryptoCard(ttkb.Frame):
         price_frame = ttkb.Frame(self, bootstyle="secondary")
         price_frame.pack(fill='x', pady=(0, 10))
         
-        ttkb.Label(price_frame, text="Preço:", font=("Segoe UI", 11), bootstyle="secondary").pack(side='left')
-        self.price_value = ttkb.Label(price_frame, text="Carregando...", font=("Segoe UI", 12, "bold"), bootstyle="light")
+        ttkb.Label(price_frame, text="Preço:", font=("Segoe UI", 12), bootstyle="secondary").pack(side='left')
+        self.price_value = ttkb.Label(price_frame, text="Carregando...", font=("Segoe UI", 14, "bold"), bootstyle="light")
         self.price_value.pack(side='right')
 
         self.data_labels = {"current_price": self.price_value}
@@ -98,8 +98,8 @@ class CryptoCard(ttkb.Frame):
         """Cria um par de labels (descrição e valor) para um indicador."""
         indicator_frame = ttkb.Frame(parent, bootstyle="secondary")
         indicator_frame.pack(fill='x', pady=3)
-        ttkb.Label(indicator_frame, text=text, font=("Segoe UI", 9), bootstyle="secondary").pack(side='left')
-        value_label = ttkb.Label(indicator_frame, text="Carregando...", font=("Segoe UI", 9, "bold"), bootstyle="light")
+        ttkb.Label(indicator_frame, text=text, font=("Segoe UI", 10), bootstyle="secondary").pack(side='left')
+        value_label = ttkb.Label(indicator_frame, text="Carregando...", font=("Segoe UI", 10, "bold"), bootstyle="light")
         value_label.pack(side='right')
         self.data_labels[key] = value_label
 
