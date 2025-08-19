@@ -6,7 +6,7 @@ import copy
 from datetime import datetime, timedelta
 import robust_services
 import os
-from indicators import calculate_rsi, calculate_bollinger_bands, calculate_macd, calculate_emas
+from indicators import calculate_rsi, calculate_bollinger_bands, calculate_macd, calculate_emas, calculate_hilo_signals
 from notification_service import send_telegram_alert
 from pycoingecko import CoinGeckoAPI
 from app_state import load_coin_mapping_cache, save_coin_mapping_cache
@@ -148,6 +148,8 @@ def _get_sound_for_trigger(trigger_key, sound_config):
         'VOLUME_ANORMAL': 'high_volume',
         'FUGA_CAPITAL': 'critical_alert',
         'ENTRADA_CAPITAL': 'critical_alert',
+        'HILO_COMPRA': 'golden_cross',
+        'HILO_VENDA': 'death_cross',
     }
 
     default_sounds = {
@@ -197,6 +199,8 @@ def _check_and_trigger_alerts(symbol, alert_config, analysis_data, data_queue, s
         'mme_cruz_dourada': {'key': 'CRUZ_DOURADA', 'msg': "MME: Cruz Dourada (50/200)"},
         'fuga_capital': {'key': 'FUGA_CAPITAL', 'msg': "Detectada possível fuga de capital significativa"},
         'entrada_capital': {'key': 'ENTRADA_CAPITAL', 'msg': "Detectada possível entrada de capital significativa"},
+        'hilo_compra': {'key': 'HILO_COMPRA', 'msg': "HiLo: Sinal de Compra"},
+        'hilo_venda': {'key': 'HILO_VENDA', 'msg': "HiLo: Sinal de Venda"},
     }
 
     active_triggers = []
@@ -212,6 +216,8 @@ def _check_and_trigger_alerts(symbol, alert_config, analysis_data, data_queue, s
     if conditions.get('macd_cruz_alta', {}).get('enabled') and analysis_data.get('macd_signal') == "Cruzamento de Alta": active_triggers.append(alert_definitions['macd_cruz_alta'])
     if conditions.get('mme_cruz_morte', {}).get('enabled') and analysis_data.get('mme_cross') == "Cruz da Morte": active_triggers.append(alert_definitions['mme_cruz_morte'])
     if conditions.get('mme_cruz_dourada', {}).get('enabled') and analysis_data.get('mme_cross') == "Cruz Dourada": active_triggers.append(alert_definitions['mme_cruz_dourada'])
+    if conditions.get('hilo_compra', {}).get('enabled') and analysis_data.get('hilo_signal') == "HiLo Buy": active_triggers.append(alert_definitions['hilo_compra'])
+    if conditions.get('hilo_venda', {}).get('enabled') and analysis_data.get('hilo_signal') == "HiLo Sell": active_triggers.append(alert_definitions['hilo_venda'])
 
     fuga_capital_config = conditions.get('fuga_capital_significativa', {})
     if fuga_capital_config.get('enabled') and market_cap is not None and market_cap > 0:
@@ -280,7 +286,7 @@ def _analyze_symbol(symbol, ticker_data, market_cap=None):
     """Coleta e analisa todos os dados técnicos para um único símbolo."""
     analysis_result = {'symbol': symbol, 'current_price': 0.0, 'price_change_24h': 0.0, 'volume_24h': 0.0,
                        'rsi_value': 0.0, 'rsi_signal': "N/A", 'bollinger_signal': "Nenhum",
-                       'macd_signal': "Nenhum", 'mme_cross': "Nenhum", 'market_cap': market_cap}
+                       'macd_signal': "Nenhum", 'mme_cross': "Nenhum", 'hilo_signal': "Nenhum", 'market_cap': market_cap}
 
     symbol_ticker = ticker_data.get(symbol, {})
     analysis_result['current_price'] = robust_services.DataValidator.safe_price(symbol_ticker.get('lastPrice'))
@@ -293,8 +299,10 @@ def _analyze_symbol(symbol, ticker_data, market_cap=None):
     rsi_value, _, _ = calculate_rsi(df)
     upper_band, lower_band, _, _ = calculate_bollinger_bands(df)
     macd_cross = calculate_macd(df)
+    _, _, hilo_signal = calculate_hilo_signals(df)
     emas = calculate_emas(df, periods=[50, 200])
 
+    analysis_result['hilo_signal'] = hilo_signal
     analysis_result['rsi_value'] = rsi_value if rsi_value else 0.0
     analysis_result['rsi_signal'] = f"{rsi_value:.2f}" if rsi_value else "N/A"
     
