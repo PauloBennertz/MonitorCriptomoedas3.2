@@ -127,50 +127,67 @@ class AlertConsolidator:
         canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
         
-        # Adiciona cada alerta
-        for i, alert in enumerate(alerts):
-            alert_frame = ttkb.Frame(scrollable_frame, padding="5")
-            alert_frame.pack(fill=tk.X, pady=2)
+        # Agrupa alertas por símbolo
+        grouped_alerts = {}
+        for alert in alerts:
+            symbol = alert['symbol']
+            if symbol not in grouped_alerts:
+                grouped_alerts[symbol] = []
+            grouped_alerts[symbol].append(alert)
+
+        # Adiciona cada grupo de alertas
+        for i, (symbol, symbol_alerts) in enumerate(grouped_alerts.items()):
+            # Frame para o grupo de alertas de uma moeda
+            group_frame = ttkb.Frame(scrollable_frame, padding="10", bootstyle="light")
+            group_frame.pack(fill=tk.X, pady=5, padx=5)
             
-            # Cabeçalho do alerta
-            header_frame = ttkb.Frame(alert_frame)
-            header_frame.pack(fill=tk.X)
+            # Cabeçalho da moeda
+            coin_header_frame = ttkb.Frame(group_frame, bootstyle="light")
+            coin_header_frame.pack(fill=tk.X)
             
-            # Símbolo e trigger
-            symbol_label = ttkb.Label(header_frame, text=f"📊 {alert['symbol']}", 
-                                     font=("-weight bold", 12), bootstyle="primary")
+            symbol_label = ttkb.Label(coin_header_frame, text=f"📊 {symbol}",
+                                     font=("-weight bold", 14), bootstyle="primary")
             symbol_label.pack(side="left")
             
-            trigger_label = ttkb.Label(header_frame, text=f"🔔 {alert['trigger']}", 
-                                      font=("-weight bold", 10), bootstyle="warning")
-            trigger_label.pack(side="left", padx=(10, 0))
-            
-            time_label = ttkb.Label(header_frame, text=f"⏰ {alert['timestamp']}", 
-                                   font=("-weight", "normal"), bootstyle="secondary")
-            time_label.pack(side="right")
-            
-            # Mensagem do alerta
-            message_label = ttkb.Label(alert_frame, text=alert['message'], 
-                                      wraplength=550, justify=tk.LEFT)
-            message_label.pack(fill=tk.X, pady=(5, 0))
-            
-            # Resumo do Alerta (NOVO)
-            summary_text = ALERT_SUMMARIES.get(alert['trigger'], "Consulte o Guia para mais detalhes.")
-            if summary_text:
-                summary_label = ttkb.Label(
-                    alert_frame,
-                    text=f"💡 {summary_text}",
-                    wraplength=550,
-                    justify=tk.LEFT,
-                    font=("", 8, "italic"), # Fonte menor e itálico
-                    bootstyle="secondary"   # Cor mais sutil
-                )
-                summary_label.pack(fill=tk.X, pady=(5, 5))
+            # Adiciona cada alerta individual para a moeda
+            for alert in symbol_alerts:
+                alert_frame = ttkb.Frame(group_frame, padding="5", bootstyle="light")
+                alert_frame.pack(fill=tk.X, pady=2, padx=10)
 
-            # Separador
-            if i < len(alerts) - 1:
-                separator = ttkb.Separator(alert_frame, orient="horizontal")
-                separator.pack(fill=tk.X, pady=5)
+                # Cabeçalho do alerta (trigger e timestamp)
+                header_frame = ttkb.Frame(alert_frame, bootstyle="light")
+                header_frame.pack(fill=tk.X)
+
+                trigger_label = ttkb.Label(header_frame, text=f"🔔 {alert['trigger']}",
+                                          font=("-weight bold", 11), bootstyle="warning")
+                trigger_label.pack(side="left")
+
+                time_label = ttkb.Label(header_frame, text=f"⏰ {alert['timestamp']}",
+                                       font=("", 9), bootstyle="secondary")
+                time_label.pack(side="right")
+
+                # Mensagem do alerta
+                message_label = ttkb.Label(alert_frame, text=alert['message'],
+                                          wraplength=520, justify=tk.LEFT, bootstyle="light")
+                message_label.pack(fill=tk.X, pady=(5, 0))
+
+                # Resumo do Alerta
+                summary_text = ALERT_SUMMARIES.get(alert['trigger'], "Consulte o Guia para mais detalhes.")
+                if summary_text:
+                    summary_label = ttkb.Label(
+                        alert_frame,
+                        text=f"💡 {summary_text}",
+                        wraplength=520,
+                        justify=tk.LEFT,
+                        font=("", 8, "italic"),
+                        bootstyle="secondary"
+                    )
+                    summary_label.pack(fill=tk.X, pady=(5, 5))
+
+            # Separador entre moedas
+            if i < len(grouped_alerts) - 1:
+                separator = ttkb.Separator(scrollable_frame, orient="horizontal")
+                separator.pack(fill=tk.X, pady=10)
         
         # Botões de ação
         button_frame = ttkb.Frame(main_frame)
@@ -231,13 +248,31 @@ class AlertConsolidator:
         if not bot_token or "AQUI" in str(bot_token) or not chat_id or "AQUI" in str(chat_id):
             return
         
+        # Agrupa alertas por símbolo para uma mensagem mais clara
+        grouped_alerts = {}
+        for alert in alerts:
+            symbol = alert['symbol']
+            if symbol not in grouped_alerts:
+                grouped_alerts[symbol] = []
+            grouped_alerts[symbol].append(alert)
+
         # Cria mensagem consolidada
         message = f"🚨 *{len(alerts)} Alerta(s) Consolidado(s)*\n\n"
         
+        # Resumo por moeda
+        for symbol, symbol_alerts in grouped_alerts.items():
+            message += f"📊 *{symbol}* ({len(symbol_alerts)} alerta(s))\n"
+            for alert in symbol_alerts:
+                message += f"  - {alert['trigger']} às {alert['timestamp']}\n"
+            message += "\n"
+
+        # Adiciona detalhes completos de cada alerta
+        message += "--- *Detalhes* ---\n\n"
         for alert in alerts:
-            message += f"📊 *{alert['symbol']}* - {alert['trigger']}\n"
-            message += f"⏰ {alert['timestamp']}\n"
-            message += f"💬 {alert['message']}\n\n"
+            message += f"*{alert['symbol']}* - {alert['trigger']}\n"
+            # Remove a parte inicial "ALERTA: ..." da mensagem para não ser redundante
+            clean_message = alert['message'].split('\n\n', 1)[-1]
+            message += f"```{clean_message}```\n\n"
         
         send_telegram_alert(bot_token, chat_id, message)
     
