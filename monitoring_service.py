@@ -315,6 +315,8 @@ def run_monitoring_cycle(config, data_queue, stop_event, coingecko_mapping):
     logging.info("Ciclo de monitoramento iniciado.")
     
     while not stop_event.is_set():
+        check_interval = config.get("check_interval_seconds", 300)
+        data_queue.put({'type': 'start_countdown', 'payload': {'seconds': check_interval}})
         monitored_cryptos = copy.deepcopy(config.get("cryptos_to_monitor", []))
         sound_config = config.get('sound_config', {})
         if not monitored_cryptos:
