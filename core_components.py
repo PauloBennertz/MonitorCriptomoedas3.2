@@ -194,11 +194,12 @@ class StartupConfigDialog(ttkb.Toplevel):
 
     def _populate_lists(self):
         """Preenche as listas de moedas disponíveis e monitoradas."""
+        self.available_listbox.delete(0, tk.END)
         self.monitored_listbox.delete(0, tk.END)
         monitored_symbols = {crypto.get('symbol') for crypto in self.config.get("cryptos_to_monitor", []) if crypto.get('symbol')}
-        for symbol in sorted(list(monitored_symbols)):
-            self.monitored_listbox.insert(tk.END, symbol)
-        self._filter_available_list()
+        for symbol in sorted(self.all_symbols_master):
+            if symbol not in monitored_symbols: self.available_listbox.insert(tk.END, symbol)
+        for symbol in sorted(list(monitored_symbols)): self.monitored_listbox.insert(tk.END, symbol)
 
     def _filter_available_list(self, *args):
         """Filtra a lista de moedas disponíveis com base na busca."""
@@ -209,74 +210,29 @@ class StartupConfigDialog(ttkb.Toplevel):
             filtered_symbols = [s for s in sorted(self.all_symbols_master) if s not in monitored_symbols]
         else:
             filtered_symbols = [s for s in self.all_symbols_master if search_term in s.upper() and s not in monitored_symbols]
-        for symbol in filtered_symbols:
-            self.available_listbox.insert(tk.END, symbol)
+        for symbol in filtered_symbols: self.available_listbox.insert(tk.END, symbol)
 
     def _add_symbols(self):
         """Adiciona os símbolos selecionados à lista de moedas monitoradas."""
         selected_indices = self.available_listbox.curselection()
-        if not selected_indices:
-            return
+        if not selected_indices: return
         symbols_to_move = [self.available_listbox.get(i) for i in selected_indices]
-
-        current_monitored = list(self.monitored_listbox.get(0, tk.END))
-        for symbol in symbols_to_move:
-            if symbol not in current_monitored:
-                current_monitored.append(symbol)
-
-        self.monitored_listbox.delete(0, tk.END)
-        for symbol in sorted(current_monitored):
-            self.monitored_listbox.insert(tk.END, symbol)
-
-        for i in sorted(selected_indices, reverse=True):
-            self.available_listbox.delete(i)
+        for symbol in sorted(symbols_to_move): self.monitored_listbox.insert(tk.END, symbol)
+        for i in sorted(selected_indices, reverse=True): self.available_listbox.delete(i)
 
     def _remove_symbols(self):
         """Remove os símbolos selecionados da lista de moedas monitoradas."""
         selected_indices = self.monitored_listbox.curselection()
-        if not selected_indices:
-            return
-
-        for i in sorted(selected_indices, reverse=True):
-            self.monitored_listbox.delete(i)
-
+        if not selected_indices: return
+        symbols_to_move = [self.monitored_listbox.get(i) for i in selected_indices]
+        for symbol in symbols_to_move:
+             all_items = list(self.available_listbox.get(0, tk.END))
+             all_items.append(symbol)
+             all_items.sort()
+             self.available_listbox.delete(0, tk.END)
+             for item in all_items: self.available_listbox.insert(tk.END, item)
+        for i in sorted(selected_indices, reverse=True): self.monitored_listbox.delete(i)
         self._filter_available_list()
-
-    def on_start(self):
-        """Salva a configuração da sessão e fecha a janela."""
-        self.config["telegram_bot_token"] = self.token_var.get()
-        self.config["telegram_chat_id"] = self.chat_id_var.get()
-
-        monitored_symbols = list(self.monitored_listbox.get(0, tk.END))
-        if not monitored_symbols:
-            messagebox.showwarning("Nenhuma Moeda", "Por favor, adicione ao menos uma moeda para monitorar.", parent=self)
-            return
-
-        new_config_list = []
-        default_alert_config = {
-            "notes": "", "sound": "sons/Alerta.mp3",
-            "conditions": {
-                "preco_baixo": {"enabled": False, "value": 0.0},
-                "preco_alto": {"enabled": False, "value": 0.0},
-                "rsi_sobrevendido": {"enabled": True, "value": 30.0},
-                "rsi_sobrecomprado": {"enabled": True, "value": 70.0},
-                "bollinger_abaixo": {"enabled": True},
-                "bollinger_acima": {"enabled": True},
-                "macd_cruz_baixa": {"enabled": True},
-                "macd_cruz_alta": {"enabled": True},
-                "mme_cruz_morte": {"enabled": True},
-                "mme_cruz_dourada": {"enabled": True},
-                "fuga_capital_significativa": {"enabled": False, "value": "0.5, -2.0"},
-                "entrada_capital_significativa": {"enabled": False, "value": "0.3, 1.0"}
-            },
-            "triggered_conditions": []
-        }
-        for symbol in sorted(monitored_symbols):
-            new_config_list.append({"symbol": symbol, "alert_config": default_alert_config})
-
-        self.config["cryptos_to_monitor"] = new_config_list
-        self.session_started = True
-        self.destroy()
 
     def on_save(self):
         """Salva a configuração da sessão e fecha a janela."""
