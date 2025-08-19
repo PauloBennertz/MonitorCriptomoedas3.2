@@ -216,12 +216,12 @@ class AlertConsolidator:
         # Se há múltiplos alertas, usa som especial
         if len(alerts) > 1:
             # Som especial para múltiplos alertas
-            multiple_alerts_sound = "sons/multiplos_alertas.wav"
+            multiple_alerts_sound = os.path.join("sons", "multiplos_alertas.wav")
             if os.path.exists(os.path.join(get_application_path(), multiple_alerts_sound)):
                 play_alert_sound(multiple_alerts_sound)
             else:
                 # Fallback para som padrão se arquivo não existir
-                play_alert_sound("sons/Alerta.mp3")
+                play_alert_sound(os.path.join("sons", "Alerta.mp3"))
         else:
             # Para um único alerta, usa o som configurado
             for alert in alerts:
@@ -316,6 +316,7 @@ def play_alert_sound(sound_path_str):
         return
 
     sound_path = sound_path_str if os.path.isabs(sound_path_str) else os.path.join(get_application_path(), sound_path_str)
+    sound_path = os.path.normpath(sound_path)
 
     if os.path.exists(sound_path):
         try:

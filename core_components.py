@@ -435,7 +435,7 @@ class AlertConfigDialog(ttkb.Toplevel):
         initial_dir = os.path.join(app_path, 'sons')
         if not os.path.isdir(initial_dir): initial_dir = app_path
         if filepath := filedialog.askopenfilename(title="Selecione um arquivo .wav", initialdir=initial_dir, filetypes=[("Arquivos de Som", "*.wav")]):
-            self.sound_var.set(os.path.relpath(filepath, app_path).replace("\\", "/"))
+            self.sound_var.set(os.path.relpath(filepath, app_path))
 
     def preview_sound(self):
         """Toca o som de alerta selecionado como uma prévia."""
