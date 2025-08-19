@@ -374,7 +374,7 @@ class CryptoApp:
 
     def show_help_window(self):
         """Abre a janela de ajuda com o guia de indicadores."""
-        HelpWindow(self.root)
+        HelpWindow(self)
 
     def center_toplevel_on_main(self, toplevel_window):
         """Centraliza uma janela Toplevel em relação à janela principal."""

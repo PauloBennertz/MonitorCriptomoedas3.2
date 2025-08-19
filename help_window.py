@@ -25,12 +25,11 @@ ALERT_SUMMARIES = {
 
 class HelpWindow(ttkb.Toplevel):
     def __init__(self, parent_app):
-        # CORREÇÃO AQUI: parent_app já é a instância da MainApplication, que é o root
-        super().__init__(parent_app) 
+        super().__init__(parent_app.root)
         self.parent_app = parent_app
         self.title("Guia de Indicadores")
         self.geometry("700x500")
-        self.transient(self.master)
+        self.transient(parent_app.root)
         self.grab_set()
 
         self.setup_ui()

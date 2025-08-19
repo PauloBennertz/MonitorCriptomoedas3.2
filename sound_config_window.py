@@ -77,16 +77,16 @@ class SoundConfigWindow:
         """Cria as configurações de som."""
         # Sons disponíveis
         sound_options = [
-            ("Alerta Padrão", "default_alert", "sons/Alerta.mp3"),
-            ("Sobrecompra", "overbought", "sons/sobrecomprado.wav"),
-            ("Sobrecompra (Alternativo)", "overbought_alt", "sons/sobrecomprado2.wav"),
-            ("Cruzamento de Alta", "golden_cross", "sons/cruzamentoAlta.wav"),
-            ("Cruzamento de Baixa", "death_cross", "sons/cruzamentoBaixa.wav"),
-            ("Preço Acima", "price_above", "sons/precoAcima.wav"),
-            ("Preço Abaixo", "price_below", "sons/precoAbaixo.wav"),
-            ("Volume Alto", "high_volume", "sons/volumeAlto.wav"),
-            ("Múltiplos Alertas", "multiple_alerts", "sons/multiplos_alertas.wav"),
-            ("Alerta Crítico", "critical_alert", "sons/alertaCritico.wav")
+            ("Alerta Padrão", "default_alert", os.path.join("sons", "Alerta.mp3")),
+            ("Sobrecompra", "overbought", os.path.join("sons", "sobrecomprado.wav")),
+            ("Sobrecompra (Alternativo)", "overbought_alt", os.path.join("sons", "sobrecomprado2.wav")),
+            ("Cruzamento de Alta", "golden_cross", os.path.join("sons", "cruzamentoAlta.wav")),
+            ("Cruzamento de Baixa", "death_cross", os.path.join("sons", "cruzamentoBaixa.wav")),
+            ("Preço Acima", "price_above", os.path.join("sons", "precoAcima.wav")),
+            ("Preço Abaixo", "price_below", os.path.join("sons", "precoAbaixo.wav")),
+            ("Volume Alto", "high_volume", os.path.join("sons", "volumeAlto.wav")),
+            ("Múltiplos Alertas", "multiple_alerts", os.path.join("sons", "multiplos_alertas.wav")),
+            ("Alerta Crítico", "critical_alert", os.path.join("sons", "alertaCritico.wav"))
         ]
         
         # Título da seção
@@ -218,16 +218,16 @@ class SoundConfigWindow:
         if messagebox.askyesno("Confirmar", "Deseja restaurar as configurações padrão?"):
             # Restaura valores padrão
             defaults = {
-                "default_alert": "sons/Alerta.mp3",
-                "overbought": "sons/sobrecomprado.wav",
-                "overbought_alt": "sons/sobrecomprado2.wav",
-                "golden_cross": "sons/cruzamentoAlta.wav",
-                "death_cross": "sons/cruzamentoBaixa.wav",
-                "price_above": "sons/precoAcima.wav",
-                "price_below": "sons/precoAbaixo.wav",
-                "high_volume": "sons/volumeAlto.wav",
-                "multiple_alerts": "sons/multiplos_alertas.wav",
-                "critical_alert": "sons/alertaCritico.wav"
+                "default_alert": os.path.join("sons", "Alerta.mp3"),
+                "overbought": os.path.join("sons", "sobrecomprado.wav"),
+                "overbought_alt": os.path.join("sons", "sobrecomprado2.wav"),
+                "golden_cross": os.path.join("sons", "cruzamentoAlta.wav"),
+                "death_cross": os.path.join("sons", "cruzamentoBaixa.wav"),
+                "price_above": os.path.join("sons", "precoAcima.wav"),
+                "price_below": os.path.join("sons", "precoAbaixo.wav"),
+                "high_volume": os.path.join("sons", "volumeAlto.wav"),
+                "multiple_alerts": os.path.join("sons", "multiplos_alertas.wav"),
+                "critical_alert": os.path.join("sons", "alertaCritico.wav")
             }
             
             for key, default_value in defaults.items():
