@@ -28,6 +28,7 @@ from api_config_window import ApiConfigWindow
 from capital_flow_window import CapitalFlowWindow
 from token_movers_window import TokenMoversWindow
 from sound_config_window import SoundConfigWindow
+from data_viewer_window import DataViewerWindow
 from coin_manager import CoinManager
 from help_window import HelpWindow
 from app_state import get_last_fetch_timestamp, update_last_fetch_timestamp
@@ -119,6 +120,8 @@ class CryptoApp:
         
         analysis_menu = tk.Menu(self.menu_bar, tearoff=0)
         self.menu_bar.add_cascade(label="📊 Análise de Mercado", menu=analysis_menu)
+        analysis_menu.add_command(label="🌐 Visualizador de Dados do Mercado", command=self.show_data_viewer_window)
+        analysis_menu.add_separator()
         analysis_menu.add_command(label="💹 Fluxo de Capital (Categorias)", command=self.show_capital_flow_window)
         analysis_menu.add_command(label="📈 Ganhadores e Perdedores", command=self.show_token_movers_window)
         analysis_menu.add_command(label="🔔 Histórico de Alertas", command=self.show_alert_history_window)
@@ -362,6 +365,12 @@ class CryptoApp:
         from pycoingecko import CoinGeckoAPI
         cg_client = CoinGeckoAPI()
         TokenMoversWindow(self.root, self, cg_client, robust_services.data_cache, robust_services.rate_limiter)
+
+    def show_data_viewer_window(self):
+        """Abre a janela do visualizador de dados de mercado."""
+        from pycoingecko import CoinGeckoAPI
+        cg_client = CoinGeckoAPI()
+        DataViewerWindow(self.root, self, cg_client, robust_services.data_cache, robust_services.rate_limiter)
 
     def show_alert_history_window(self):
         """Abre a janela do histórico de alertas."""
