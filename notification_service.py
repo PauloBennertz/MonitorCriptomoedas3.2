@@ -13,7 +13,7 @@ import ttkbootstrap as ttkb
 from collections import deque
 import threading
 import time
-from help_window import ALERT_SUMMARIES
+from core_components import ALERT_SUMMARIES
 
 def get_application_path():
     """Obtém o caminho base da aplicação, seja executável ou script."""
