@@ -320,6 +320,19 @@ class AlertConfigDialog(ttkb.Toplevel):
         ttkb.Button(sound_controls, text="Procurar", command=self.browse_sound_file, bootstyle="info").pack(side="left", padx=5)
         ttkb.Button(sound_controls, text="Testar", command=self.preview_sound, bootstyle="success").pack(side="left")
 
+        cooldown_frame = ttkb.Frame(common_frame, bootstyle="dark")
+        cooldown_frame.pack(fill="x", pady=10)
+
+        ttkb.Label(cooldown_frame, text="Cooldown do Alerta (minutos):", font=("Segoe UI", 10, "bold"), bootstyle="light").pack(side="left")
+
+        self.cooldown_var = tk.IntVar(value=self.config_data.get('alert_cooldown_minutes', 60))
+        cooldown_spinbox = ttkb.Spinbox(cooldown_frame, from_=1, to=1440, textvariable=self.cooldown_var, width=8)
+        cooldown_spinbox.pack(side="left", padx=(10, 0))
+
+        cooldown_tooltip = Tooltip(cooldown_spinbox)
+        cooldown_spinbox.bind("<Enter>", lambda e, tt=cooldown_tooltip: tt.show_tooltip("Tempo mínimo (em minutos) entre alertas para a mesma condição."))
+        cooldown_spinbox.bind("<Leave>", lambda e, tt=cooldown_tooltip: tt.hide_tooltip())
+
         ttkb.Separator(main_container, bootstyle="info").pack(fill="x", pady=10)
         
         conditions_header = ttkb.Frame(main_container, bootstyle="dark")
@@ -374,7 +387,7 @@ class AlertConfigDialog(ttkb.Toplevel):
 
     def _get_default_config(self):
         """Retorna uma estrutura de configuração de alerta padrão."""
-        return {"notes": "", "sound": "sons/Alerta.mp3", "conditions": {"preco_baixo": {"enabled": False, "value": 0.0}, "preco_alto": {"enabled": False, "value": 0.0}, "rsi_sobrevendido": {"enabled": False, "value": 30.0}, "rsi_sobrecomprado": {"enabled": False, "value": 70.0}, "bollinger_abaixo": {"enabled": False}, "bollinger_acima": {"enabled": False}, "macd_cruz_baixa": {"enabled": False}, "macd_cruz_alta": {"enabled": False}, "mme_cruz_morte": {"enabled": False}, "mme_cruz_dourada": {"enabled": False}}, "triggered_conditions": []}
+        return {"notes": "", "sound": "sons/Alerta.mp3", "alert_cooldown_minutes": 60, "conditions": {"preco_baixo": {"enabled": False, "value": 0.0}, "preco_alto": {"enabled": False, "value": 0.0}, "rsi_sobrevendido": {"enabled": False, "value": 30.0}, "rsi_sobrecomprado": {"enabled": False, "value": 70.0}, "bollinger_abaixo": {"enabled": False}, "bollinger_acima": {"enabled": False}, "macd_cruz_baixa": {"enabled": False}, "macd_cruz_alta": {"enabled": False}, "mme_cruz_morte": {"enabled": False}, "mme_cruz_dourada": {"enabled": False}}, "triggered_conditions": {}}
 
     def _create_condition_widgets(self, parent_frame):
         """Cria e organiza os widgets para cada condição de alerta."""
@@ -454,7 +467,7 @@ class AlertConfigDialog(ttkb.Toplevel):
     
     def on_save(self):
         """Valida e salva a configuração de alerta."""
-        final_config = {"symbol": self.symbol, "alert_config": {"notes": self.notes_var.get(), "sound": self.sound_var.get(), "conditions": {}, "triggered_conditions": self.config_data.get('triggered_conditions', [])}}
+        final_config = {"symbol": self.symbol, "alert_config": {"notes": self.notes_var.get(), "sound": self.sound_var.get(), "alert_cooldown_minutes": self.cooldown_var.get(), "conditions": {}, "triggered_conditions": self.config_data.get('triggered_conditions', [])}}
         for key, var_dict in self.vars.items():
             is_enabled = var_dict['enabled'].get()
             condition_data = {"enabled": is_enabled}
@@ -841,6 +854,7 @@ class ManageSymbolsDialog(ttkb.Toplevel):
         return {
             "notes": "",
             "sound": "sons/Alerta.mp3",
+            "alert_cooldown_minutes": 60,
             "conditions": {
                 "preco_baixo": {"enabled": False, "value": 0.0},
                 "preco_alto": {"enabled": False, "value": 0.0},
@@ -855,7 +869,7 @@ class ManageSymbolsDialog(ttkb.Toplevel):
                 "fuga_capital_significativa": {"enabled": False, "value": "0.5, -2.0"},
                 "entrada_capital_significativa": {"enabled": False, "value": "0.3, 1.0"}
             },
-            "triggered_conditions": []
+            "triggered_conditions": {}
         }
 
 class AlertHistoryWindow(ttkb.Toplevel):

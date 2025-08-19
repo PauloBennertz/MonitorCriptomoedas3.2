@@ -3,6 +3,7 @@ import pandas as pd
 import time
 import logging
 import copy
+from datetime import datetime, timedelta
 import robust_services
 import os
 from indicators import calculate_rsi, calculate_bollinger_bands, calculate_macd, calculate_emas
@@ -169,7 +170,13 @@ def _get_sound_for_trigger(trigger_key, sound_config):
 def _check_and_trigger_alerts(symbol, alert_config, analysis_data, data_queue, sound_config):
     """Verifica e dispara alertas para um símbolo com base nas condições configuradas."""
     conditions = alert_config.get('conditions', {})
-    triggered_conditions = alert_config.get('triggered_conditions', [])
+
+    triggered_conditions = alert_config.get('triggered_conditions', {})
+    if isinstance(triggered_conditions, list):
+        triggered_conditions = {}
+
+    alert_cooldown_minutes = alert_config.get('alert_cooldown_minutes', 60)
+
     current_price = analysis_data['current_price']
     rsi = analysis_data['rsi_value']
     volume_24h = analysis_data['volume_24h']
@@ -224,39 +231,50 @@ def _check_and_trigger_alerts(symbol, alert_config, analysis_data, data_queue, s
         except (ValueError, TypeError):
             logging.warning(f"Configuração de alerta 'entrada de capital' inválida para {symbol}.")
 
+    now = datetime.now()
     for trigger in active_triggers:
         trigger_key = trigger['key']
-        if trigger_key not in triggered_conditions:
-            market_cap_str = f"${market_cap:,.0f}" if market_cap is not None else "N/A"
-            user_notes = alert_config.get('notes', '').strip()
-            summary = ALERT_SUMMARIES.get(trigger_key, "Consulte o guia para mais detalhes.")
-            
-            observacoes = summary
-            if user_notes:
-                observacoes = f"{user_notes}\n\nAnálise: {summary}"
 
-            formatted_message = (
-                f"🚨 ALERTA: {symbol} 🚨\n\n"
-                f"Disparo: {trigger['msg']} (Atual: ${current_price:,.2f})\n"
-                f"Preço Atual: ${current_price:,.2f}\n"
-                f"Volume 24h: ${volume_24h:,.0f}\n"
-                f"Capitalização de Mercado: {market_cap_str}\n"
-                f"Variação 24h: {price_change_24h:.2f}%\n\n"
-                f"Observações: {observacoes}"
-            )
+        last_triggered_str = triggered_conditions.get(trigger_key)
+        if last_triggered_str:
+            try:
+                last_triggered_time = datetime.fromisoformat(last_triggered_str)
+                if now - last_triggered_time < timedelta(minutes=alert_cooldown_minutes):
+                    continue
+            except ValueError:
+                logging.warning(f"Formato de data inválido para a última ativação do alerta '{trigger_key}' para {symbol}. Ignorando cooldown para este ciclo.")
 
-            sound_path = _get_sound_for_trigger(trigger_key, sound_config)
-            alert_payload = {
-                'symbol': symbol,
-                'message': formatted_message,
-                'sound': sound_path,
-                'trigger': trigger_key, # Usando a chave programática
-                'analysis_data': analysis_data
-            }
-            data_queue.put({'type': 'alert', 'payload': alert_payload})
-            triggered_conditions.append(trigger_key)
+        market_cap_str = f"${market_cap:,.0f}" if market_cap is not None else "N/A"
+        user_notes = alert_config.get('notes', '').strip()
+        summary = ALERT_SUMMARIES.get(trigger_key, "Consulte o guia para mais detalhes.")
 
-    alert_config['triggered_conditions'] = [t_key for t_key in triggered_conditions if any(t['key'] == t_key for t in active_triggers)]
+        observacoes = summary
+        if user_notes:
+            observacoes = f"{user_notes}\n\nAnálise: {summary}"
+
+        formatted_message = (
+            f"🚨 ALERTA: {symbol} 🚨\n\n"
+            f"Disparo: {trigger['msg']} (Atual: ${current_price:,.2f})\n"
+            f"Preço Atual: ${current_price:,.2f}\n"
+            f"Volume 24h: ${volume_24h:,.0f}\n"
+            f"Capitalização de Mercado: {market_cap_str}\n"
+            f"Variação 24h: {price_change_24h:.2f}%\n\n"
+            f"Observações: {observacoes}"
+        )
+
+        sound_path = _get_sound_for_trigger(trigger_key, sound_config)
+        alert_payload = {
+            'symbol': symbol,
+            'message': formatted_message,
+            'sound': sound_path,
+            'trigger': trigger_key,
+            'analysis_data': analysis_data
+        }
+        data_queue.put({'type': 'alert', 'payload': alert_payload})
+        triggered_conditions[trigger_key] = now.isoformat()
+
+    active_trigger_keys = {t['key'] for t in active_triggers}
+    alert_config['triggered_conditions'] = {k: v for k, v in triggered_conditions.items() if k in active_trigger_keys}
 
 def _analyze_symbol(symbol, ticker_data, market_cap=None):
     """Coleta e analisa todos os dados técnicos para um único símbolo."""
