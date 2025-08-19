@@ -88,6 +88,7 @@ class CryptoApp:
         self.stop_monitoring_event = threading.Event()
         self.coin_cards = {}
         self.alert_history = self.load_alert_history()
+        self.countdown_job = None
         
         self.setup_logging()
         self.setup_ui()
@@ -164,6 +165,13 @@ class CryptoApp:
         
         self.update_button = ttkb.Button(status_frame, text="🔄 Atualizar Dados", command=self.manual_update_prices, bootstyle="info", width=18)
         self.update_button.pack(side="right", padx=(0, 10))
+
+        countdown_frame = ttkb.Frame(status_frame, bootstyle="secondary")
+        countdown_frame.pack(side="right", padx=(0, 10))
+
+        ttkb.Label(countdown_frame, text="Próxima atualização:", font=("Segoe UI", 11), bootstyle="light").pack(side="left", padx=(0, 5))
+        self.countdown_label = ttkb.Label(countdown_frame, text="--:--", font=("Segoe UI", 11, "bold"), bootstyle="secondary")
+        self.countdown_label.pack(side="left")
         
         self.check_api_status()
         
@@ -295,6 +303,7 @@ class CryptoApp:
                 item = self.data_queue.get_nowait()
                 if item['type'] == 'data': self.update_card_data(item['payload'])
                 elif item['type'] == 'alert': self.handle_alert(item['payload'])
+                elif item['type'] == 'start_countdown': self.start_countdown(item['payload']['seconds'])
         finally:
             self.root.after(200, self.process_queue)
 
@@ -493,6 +502,20 @@ class CryptoApp:
         self.update_button.config(state='normal', text='🔄 Atualizar Preços')
         self.update_status_label.config(text="✗ Erro", bootstyle="danger")
         self.root.after(5000, lambda: self.update_status_label.config(text=""))
+
+    def start_countdown(self, seconds):
+        if self.countdown_job:
+            self.root.after_cancel(self.countdown_job)
+
+        def update_timer(s):
+            mins, secs = divmod(s, 60)
+            self.countdown_label.config(text=f"{mins:02d}:{secs:02d}")
+            if s > 0:
+                self.countdown_job = self.root.after(1000, update_timer, s - 1)
+            else:
+                self.countdown_label.config(text="Atualizando...")
+
+        update_timer(seconds)
 
     def _on_mousewheel(self, event):
         """Permite a rolagem da lista de cards com o scroll do mouse."""
