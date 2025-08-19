@@ -890,8 +890,14 @@ class AlertHistoryWindow(ttkb.Toplevel):
         
         ttkb.Label(search_frame, text="🔍", font=("Segoe UI", 12), bootstyle="secondary").pack(side="left", padx=(0, 5))
         self.search_var = tk.StringVar()
-        search_entry = ttkb.Entry(search_frame, textvariable=self.search_var, width=30, font=("Segoe UI", 10), bootstyle="dark", placeholder="Buscar por símbolo ou tipo de alerta...")
-        search_entry.pack(side="left", padx=(0, 15))
+        self.search_entry = ttkb.Entry(search_frame, textvariable=self.search_var, width=30, font=("Segoe UI", 10), bootstyle="dark")
+        self.search_entry.pack(side="left", padx=(0, 15))
+
+        self.placeholder_text = "Buscar por símbolo ou tipo de alerta..."
+        self._add_placeholder()
+
+        self.search_entry.bind("<FocusIn>", self._clear_placeholder)
+        self.search_entry.bind("<FocusOut>", self._add_placeholder)
         
         period_frame = ttkb.Frame(filter_frame, bootstyle="dark")
         period_frame.pack(side="right")
@@ -942,6 +948,16 @@ class AlertHistoryWindow(ttkb.Toplevel):
         self._load_history()
         self.parent_app.center_toplevel_on_main(self)
 
+    def _add_placeholder(self, event=None):
+        if not self.search_var.get():
+            self.search_entry.insert(0, self.placeholder_text)
+            self.search_entry.config(bootstyle="secondary")
+
+    def _clear_placeholder(self, event=None):
+        if self.search_var.get() == self.placeholder_text:
+            self.search_entry.delete(0, tk.END)
+            self.search_entry.config(bootstyle="dark")
+
     def _on_mousewheel(self, event):
         """Permite a rolagem da lista de histórico com o scroll do mouse."""
         if event.num == 5 or event.delta == -120:
@@ -970,6 +986,9 @@ class AlertHistoryWindow(ttkb.Toplevel):
         """Filtra o histórico exibido com base nos critérios de busca e período."""
         for item in self.tree.get_children(): self.tree.delete(item)
         search_term = self.search_var.get().lower()
+        if search_term == self.placeholder_text.lower():
+            search_term = ""
+
         period = self.period_var.get()
         
         from datetime import datetime, timedelta
