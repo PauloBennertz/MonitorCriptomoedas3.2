@@ -20,7 +20,9 @@ TOOLTIP_DEFINITIONS = {
     "mme_cruz_morte": "Cruz da Morte (MME 50 cruza para baixo da 200).",
     "mme_cruz_dourada": "Cruz Dourada (MME 50 cruza para cima da 200).",
     "fuga_capital_significativa": "Volume de negociação alto combinado com queda de preço. Sugere grande saída de capital.",
-    "entrada_capital_significativa": "Volume de negociação alto combinado com alta de preço. Sugere grande entrada de capital."
+    "entrada_capital_significativa": "Volume de negociação alto combinado com alta de preço. Sugere grande entrada de capital.",
+    "hilo_compra": "Sinal de compra do indicador HiLo. O preço cruzou acima da média móvel das máximas.",
+    "hilo_venda": "Sinal de venda do indicador HiLo. O preço cruzou abaixo da média móvel das mínimas."
 }
 
 ALERT_SUMMARIES = {
@@ -87,7 +89,7 @@ class CryptoCard(ttkb.Frame):
         right_col.pack(side='right', fill='x', expand=True, padx=(5, 0))
         
         left_labels = {"price_change_24h": "Variação (24h):", "volume_24h": "Volume (24h):", "rsi_value": "RSI:"}
-        right_labels = {"bollinger_signal": "Bollinger:", "macd_signal": "MACD:", "mme_cross": "MME:"}
+        right_labels = {"bollinger_signal": "Bollinger:", "macd_signal": "MACD:", "mme_cross": "MME:", "hilo_signal": "HiLo:"}
 
         for key, text in left_labels.items():
             self._create_label_pair(left_col, key, text)
@@ -245,7 +247,7 @@ class StartupConfigDialog(ttkb.Toplevel):
             if symbol in current_configs:
                 new_config_list.append(current_configs[symbol])
             else:
-                default_alert_config = {"notes": "", "sound": "sons/Alerta.mp3", "conditions": { "preco_baixo": {"enabled": False, "value": 0.0}, "preco_alto": {"enabled": False, "value": 0.0}, "rsi_sobrevendido": {"enabled": True, "value": 30.0}, "rsi_sobrecomprado": {"enabled": True, "value": 70.0}, "bollinger_abaixo": {"enabled": True}, "bollinger_acima": {"enabled": True}, "macd_cruz_baixa": {"enabled": True}, "macd_cruz_alta": {"enabled": True}, "mme_cruz_morte": {"enabled": True}, "mme_cruz_dourada": {"enabled": True}, "fuga_capital_significativa": {"enabled": False, "value": "0.5, -2.0"}, "entrada_capital_significativa": {"enabled": False, "value": "0.3, 1.0"} }, "triggered_conditions": []}
+                default_alert_config = {"notes": "", "sound": "sons/Alerta.mp3", "conditions": { "preco_baixo": {"enabled": False, "value": 0.0}, "preco_alto": {"enabled": False, "value": 0.0}, "rsi_sobrevendido": {"enabled": True, "value": 30.0}, "rsi_sobrecomprado": {"enabled": True, "value": 70.0}, "bollinger_abaixo": {"enabled": True}, "bollinger_acima": {"enabled": True}, "macd_cruz_baixa": {"enabled": True}, "macd_cruz_alta": {"enabled": True}, "mme_cruz_morte": {"enabled": True}, "mme_cruz_dourada": {"enabled": True}, "hilo_compra": {"enabled": True}, "hilo_venda": {"enabled": True}, "fuga_capital_significativa": {"enabled": False, "value": "0.5, -2.0"}, "entrada_capital_significativa": {"enabled": False, "value": "0.3, 1.0"} }, "triggered_conditions": []}
                 new_config_list.append({"symbol": symbol, "alert_config": default_alert_config})
         self.parent_app.config["cryptos_to_monitor"] = new_config_list
         self.parent_app.save_config()
@@ -387,12 +389,12 @@ class AlertConfigDialog(ttkb.Toplevel):
 
     def _get_default_config(self):
         """Retorna uma estrutura de configuração de alerta padrão."""
-        return {"notes": "", "sound": "sons/Alerta.mp3", "alert_cooldown_minutes": 60, "conditions": {"preco_baixo": {"enabled": False, "value": 0.0}, "preco_alto": {"enabled": False, "value": 0.0}, "rsi_sobrevendido": {"enabled": False, "value": 30.0}, "rsi_sobrecomprado": {"enabled": False, "value": 70.0}, "bollinger_abaixo": {"enabled": False}, "bollinger_acima": {"enabled": False}, "macd_cruz_baixa": {"enabled": False}, "macd_cruz_alta": {"enabled": False}, "mme_cruz_morte": {"enabled": False}, "mme_cruz_dourada": {"enabled": False}}, "triggered_conditions": {}}
+        return {"notes": "", "sound": "sons/Alerta.mp3", "alert_cooldown_minutes": 60, "conditions": {"preco_baixo": {"enabled": False, "value": 0.0}, "preco_alto": {"enabled": False, "value": 0.0}, "rsi_sobrevendido": {"enabled": False, "value": 30.0}, "rsi_sobrecomprado": {"enabled": False, "value": 70.0}, "bollinger_abaixo": {"enabled": False}, "bollinger_acima": {"enabled": False}, "macd_cruz_baixa": {"enabled": False}, "macd_cruz_alta": {"enabled": False}, "mme_cruz_morte": {"enabled": False}, "mme_cruz_dourada": {"enabled": False}, "hilo_compra": {"enabled": False}, "hilo_venda": {"enabled": False}}, "triggered_conditions": {}}
 
     def _create_condition_widgets(self, parent_frame):
         """Cria e organiza os widgets para cada condição de alerta."""
-        icons = {'preco_baixo': '⬇️', 'preco_alto': '⬆️', 'rsi_sobrevendido': '🟢', 'rsi_sobrecomprado': '🔴', 'bollinger_abaixo': '↘️', 'bollinger_acima': '↗️', 'macd_cruz_baixa': '📉', 'macd_cruz_alta': '📈', 'mme_cruz_morte': '☠️', 'mme_cruz_dourada': '🌟', 'fuga_capital_significativa': '💸', 'entrada_capital_significativa': '💰'}
-        condition_definitions = {'preco_baixo': {'text': 'Preço Abaixo de ($)', 'has_value': True, 'default': 0.0, 'icon': icons['preco_baixo'], 'category': 'price'}, 'preco_alto': {'text': 'Preço Acima de ($)', 'has_value': True, 'default': 0.0, 'icon': icons['preco_alto'], 'category': 'price'}, 'rsi_sobrevendido': {'text': 'RSI Sobrevendido (<=)', 'has_value': True, 'default': 30.0, 'icon': icons['rsi_sobrevendido'], 'category': 'indicator'}, 'rsi_sobrecomprado': {'text': 'RSI Sobrecomprado (>=)', 'has_value': True, 'default': 70.0, 'icon': icons['rsi_sobrecomprado'], 'category': 'indicator'}, 'bollinger_abaixo': {'text': 'Abaixo da Banda Inferior', 'has_value': False, 'icon': icons['bollinger_abaixo'], 'category': 'indicator'}, 'bollinger_acima': {'text': 'Acima da Banda Superior', 'has_value': False, 'icon': icons['bollinger_acima'], 'category': 'indicator'}, 'macd_cruz_baixa': {'text': 'MACD: Cruzamento de Baixa', 'has_value': False, 'icon': icons['macd_cruz_baixa'], 'category': 'indicator'}, 'macd_cruz_alta': {'text': 'MACD: Cruzamento de Alta', 'has_value': False, 'icon': icons['macd_cruz_alta'], 'category': 'indicator'}, 'mme_cruz_morte': {'text': 'MME: Cruz da Morte (50/200)', 'has_value': False, 'icon': icons['mme_cruz_morte'], 'category': 'indicator'}, 'mme_cruz_dourada': {'text': 'MME: Cruz Dourada (50/200)', 'has_value': False, 'icon': icons['mme_cruz_dourada'], 'category': 'indicator'}, 'fuga_capital_significativa': {'text': 'Fuga de Capital (Vol %, Var %)', 'has_value': True, 'default': "0.5, -2.0", 'icon': icons['fuga_capital_significativa'], 'category': 'volume', 'info_tooltip': 'Ex: "0.5, -2.0" para 0.5% do Cap.Merc. e variação menor que -2%.'}, 'entrada_capital_significativa': {'text': 'Entrada de Capital (Vol %, Var %)', 'has_value': True, 'default': "0.3, 1.0", 'icon': icons['entrada_capital_significativa'], 'category': 'volume', 'info_tooltip': 'Ex: "0.3, 1.0" para 0.3% do Cap.Merc. e variação maior que 1%.'}}
+        icons = {'preco_baixo': '⬇️', 'preco_alto': '⬆️', 'rsi_sobrevendido': '🟢', 'rsi_sobrecomprado': '🔴', 'bollinger_abaixo': '↘️', 'bollinger_acima': '↗️', 'macd_cruz_baixa': '📉', 'macd_cruz_alta': '📈', 'mme_cruz_morte': '☠️', 'mme_cruz_dourada': '🌟', 'fuga_capital_significativa': '💸', 'entrada_capital_significativa': '💰', 'hilo_compra': '🟢', 'hilo_venda': '🔴'}
+        condition_definitions = {'preco_baixo': {'text': 'Preço Abaixo de ($)', 'has_value': True, 'default': 0.0, 'icon': icons['preco_baixo'], 'category': 'price'}, 'preco_alto': {'text': 'Preço Acima de ($)', 'has_value': True, 'default': 0.0, 'icon': icons['preco_alto'], 'category': 'price'}, 'rsi_sobrevendido': {'text': 'RSI Sobrevendido (<=)', 'has_value': True, 'default': 30.0, 'icon': icons['rsi_sobrevendido'], 'category': 'indicator'}, 'rsi_sobrecomprado': {'text': 'RSI Sobrecomprado (>=)', 'has_value': True, 'default': 70.0, 'icon': icons['rsi_sobrecomprado'], 'category': 'indicator'}, 'bollinger_abaixo': {'text': 'Abaixo da Banda Inferior', 'has_value': False, 'icon': icons['bollinger_abaixo'], 'category': 'indicator'}, 'bollinger_acima': {'text': 'Acima da Banda Superior', 'has_value': False, 'icon': icons['bollinger_acima'], 'category': 'indicator'}, 'macd_cruz_baixa': {'text': 'MACD: Cruzamento de Baixa', 'has_value': False, 'icon': icons['macd_cruz_baixa'], 'category': 'indicator'}, 'macd_cruz_alta': {'text': 'MACD: Cruzamento de Alta', 'has_value': False, 'icon': icons['macd_cruz_alta'], 'category': 'indicator'}, 'mme_cruz_morte': {'text': 'MME: Cruz da Morte (50/200)', 'has_value': False, 'icon': icons['mme_cruz_morte'], 'category': 'indicator'}, 'mme_cruz_dourada': {'text': 'MME: Cruz Dourada (50/200)', 'has_value': False, 'icon': icons['mme_cruz_dourada'], 'category': 'indicator'}, 'hilo_compra': {'text': 'HiLo: Sinal de Compra', 'has_value': False, 'icon': icons['hilo_compra'], 'category': 'indicator'}, 'hilo_venda': {'text': 'HiLo: Sinal de Venda', 'has_value': False, 'icon': icons['hilo_venda'], 'category': 'indicator'}, 'fuga_capital_significativa': {'text': 'Fuga de Capital (Vol %, Var %)', 'has_value': True, 'default': "0.5, -2.0", 'icon': icons['fuga_capital_significativa'], 'category': 'volume', 'info_tooltip': 'Ex: "0.5, -2.0" para 0.5% do Cap.Merc. e variação menor que -2%.'}, 'entrada_capital_significativa': {'text': 'Entrada de Capital (Vol %, Var %)', 'has_value': True, 'default': "0.3, 1.0", 'icon': icons['entrada_capital_significativa'], 'category': 'volume', 'info_tooltip': 'Ex: "0.3, 1.0" para 0.3% do Cap.Merc. e variação maior que 1%.'}}
         categories = {'price': {'title': 'Alertas de Preço', 'color': 'info', 'icon': '💲'}, 'indicator': {'title': 'Alertas de Indicadores Técnicos', 'color': 'warning', 'icon': '📊'}, 'volume': {'title': 'Alertas de Volume e Capital', 'color': 'success', 'icon': '📈'}}
 
         categorized_conditions = {}
@@ -866,6 +868,8 @@ class ManageSymbolsDialog(ttkb.Toplevel):
                 "macd_cruz_alta": {"enabled": True},
                 "mme_cruz_morte": {"enabled": True},
                 "mme_cruz_dourada": {"enabled": True},
+                "hilo_compra": {"enabled": True},
+                "hilo_venda": {"enabled": True},
                 "fuga_capital_significativa": {"enabled": False, "value": "0.5, -2.0"},
                 "entrada_capital_significativa": {"enabled": False, "value": "0.3, 1.0"}
             },

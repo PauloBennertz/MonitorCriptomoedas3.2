@@ -1,4 +1,13 @@
 import pandas as pd
+import numpy as np
+
+def calculate_sma(series, period):
+    """Calcula a Média Móvel Simples (SMA) para uma série de dados."""
+    return series.rolling(window=period).mean()
+
+def calculate_ema(series, period):
+    """Calcula a Média Móvel Exponencial (EMA) para uma série de dados."""
+    return series.ewm(span=period, adjust=False).mean()
 
 def calculate_rsi(df, period=14):
     """Calcula o Índice de Força Relativa (RSI) para um DataFrame."""
@@ -39,3 +48,27 @@ def calculate_emas(df, periods=[50, 200]):
     for period in periods:
         if len(df) >= period: emas[period] = df['close'].ewm(span=period, adjust=False).mean()
     return emas
+
+def calculate_hilo_signals(df, length=34, ma_type="EMA", offset=0, simple_hilo=True):
+    """
+    Calcula os sinais do indicador HiLo traduzido do Pine Script.
+    Retorna uma tupla (sinal_compra, sinal_venda) onde o sinal é True ou False.
+    """
+    if df is None or df.empty or len(df) < length + offset + 1:
+        return False, False, None
+
+    if ma_type == "EMA":
+        hima = calculate_ema(df['high'], length).shift(offset)
+        loma = calculate_ema(df['low'], length).shift(offset)
+    else: # "SMA"
+        hima = calculate_sma(df['high'], length).shift(offset)
+        loma = calculate_sma(df['low'], length).shift(offset)
+
+    # Lógica de "crossover" e "crossunder"
+    # Buy signal: close crosses above hima (the high moving average)
+    buy_signal = (df['close'].iloc[-2] <= hima.iloc[-2]) and (df['close'].iloc[-1] > hima.iloc[-1])
+
+    # Sell signal: close crosses below loma (the low moving average)
+    sell_signal = (df['close'].iloc[-2] >= loma.iloc[-2]) and (df['close'].iloc[-1] < loma.iloc[-1])
+
+    return buy_signal, sell_signal, "HiLo Buy" if buy_signal else ("HiLo Sell" if sell_signal else "Nenhum")
