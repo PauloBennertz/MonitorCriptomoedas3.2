@@ -7,6 +7,7 @@ import robust_services
 from indicators import calculate_rsi, calculate_bollinger_bands, calculate_macd, calculate_emas
 from notification_service import send_telegram_alert
 from pycoingecko import CoinGeckoAPI
+from app_state import load_coin_mapping_cache, save_coin_mapping_cache
 
 cg_client = CoinGeckoAPI()
 
@@ -92,13 +93,23 @@ def get_market_caps_coingecko(symbols_to_monitor, coingecko_mapping):
         return {}
 
 def get_coingecko_global_mapping():
-    """Busca a lista de moedas da CoinGecko para mapear Símbolo -> Nome."""
-    logging.info("Buscando mapeamento de nomes da CoinGecko...")
+    """
+    Busca a lista de moedas da CoinGecko para mapear Símbolo -> Nome.
+    Utiliza um cache local que é atualizado a cada 24 horas.
+    """
+    cached_mapping = load_coin_mapping_cache()
+    if cached_mapping is not None:
+        return cached_mapping
+
+    logging.info("Buscando novo mapeamento de nomes da CoinGecko (cache expirado ou inexistente)...")
     robust_services.rate_limiter.wait_if_needed()
     try:
         coins_list = cg_client.get_coins_list()
         mapping = {coin['symbol'].upper(): coin['name'] for coin in coins_list}
-        logging.info("Mapeamento de nomes CoinGecko carregado.")
+
+        save_coin_mapping_cache(mapping) # Salva o novo mapeamento no cache
+
+        logging.info("Mapeamento de nomes CoinGecko carregado e cache atualizado.")
         return mapping
     except Exception as e:
         logging.error(f"Não foi possível buscar mapeamento da CoinGecko: {e}")
