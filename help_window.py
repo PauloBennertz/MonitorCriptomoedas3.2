@@ -67,6 +67,22 @@ class HelpWindow(ttkb.Toplevel):
         -   **Cruz Dourada (Golden Cross - MME 50 cruza acima da MME 200):** Sinal de alta significativo, sugerindo que uma tendência de alta de longo prazo pode estar começando.
         -   **Cruz da Morte (Death Cross - MME 50 cruza abaixo da MME 200):** Sinal de baixa significativo, sugerindo que uma tendência de baixa de longo prazo pode estar começando.
         
+        ----------------------------------------------------------------------
+        5. Indicador HiLo (High-Low)
+        ----------------------------------------------------------------------
+
+        O Indicador HiLo é uma ferramenta de seguimento de tendência que utiliza médias móveis das máximas (High) e mínimas (Low) para gerar sinais de compra e venda.
+
+        -   **Cálculo:**
+            -   Uma Média Móvel (geralmente Exponencial - EMA) é calculada para os preços mais altos de um período (ex: 34 dias). Esta é a linha Hi (High).
+            -   Outra Média Móvel é calculada para os preços mais baixos do mesmo período. Esta é a linha Lo (Low).
+
+        -   **Análise e Sinais:**
+            -   **Sinal de Compra (HiLo Buy):** Ocorre quando o preço de fechamento cruza para CIMA da linha Hi (média das máximas). Isso sugere que a tendência de alta está ganhando força e pode ser um bom momento para comprar.
+            -   **Sinal de Venda (HiLo Sell):** Ocorre quando o preço de fechamento cruza para BAIXO da linha Lo (média das mínimas). Isso sugere que a tendência de baixa está se fortalecendo e pode ser um bom momento para vender.
+
+        O HiLo é eficaz para identificar o início de tendências, mas como todo indicador, deve ser usado em conjunto com outras ferramentas para confirmação.
+
         Lembre-se: Nenhum indicador é 100% preciso. Use-os em conjunto para confirmar sinais e como parte de uma estratégia de negociação mais ampla.
         """
         
