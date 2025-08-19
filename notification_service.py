@@ -116,15 +116,15 @@ class AlertConsolidator:
         title_label.pack(pady=(0, 10))
         
         # Frame para scroll
-        canvas = tk.Canvas(main_frame, highlightthickness=0)
-        scrollbar = ttkb.Scrollbar(main_frame, orient="vertical", command=canvas.yview)
-        scrollable_frame = ttkb.Frame(canvas)
+        self.canvas = tk.Canvas(main_frame, highlightthickness=0, bg="#2a2a2a")
+        scrollbar = ttkb.Scrollbar(main_frame, orient="vertical", command=self.canvas.yview, bootstyle="round-dark")
+        scrollable_frame = ttkb.Frame(self.canvas, bootstyle="dark")
         
-        scrollable_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
-        canvas.configure(yscrollcommand=scrollbar.set)
+        scrollable_frame.bind("<Configure>", lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
+        self.canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        self.canvas.configure(yscrollcommand=scrollbar.set)
         
-        canvas.pack(side="left", fill="both", expand=True)
+        self.canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
         
         # Agrupa alertas por símbolo
@@ -138,11 +138,11 @@ class AlertConsolidator:
         # Adiciona cada grupo de alertas
         for i, (symbol, symbol_alerts) in enumerate(grouped_alerts.items()):
             # Frame para o grupo de alertas de uma moeda
-            group_frame = ttkb.Frame(scrollable_frame, padding="10", bootstyle="light")
+            group_frame = ttkb.Frame(scrollable_frame, padding="10", bootstyle="dark")
             group_frame.pack(fill=tk.X, pady=5, padx=5)
             
             # Cabeçalho da moeda
-            coin_header_frame = ttkb.Frame(group_frame, bootstyle="light")
+            coin_header_frame = ttkb.Frame(group_frame, bootstyle="dark")
             coin_header_frame.pack(fill=tk.X)
             
             symbol_label = ttkb.Label(coin_header_frame, text=f"📊 {symbol}",
@@ -151,11 +151,11 @@ class AlertConsolidator:
             
             # Adiciona cada alerta individual para a moeda
             for alert in symbol_alerts:
-                alert_frame = ttkb.Frame(group_frame, padding="5", bootstyle="light")
+                alert_frame = ttkb.Frame(group_frame, padding="5", bootstyle="dark")
                 alert_frame.pack(fill=tk.X, pady=2, padx=10)
 
                 # Cabeçalho do alerta (trigger e timestamp)
-                header_frame = ttkb.Frame(alert_frame, bootstyle="light")
+                header_frame = ttkb.Frame(alert_frame, bootstyle="dark")
                 header_frame.pack(fill=tk.X)
 
                 trigger_label = ttkb.Label(header_frame, text=f"🔔 {alert['trigger']}",
@@ -168,7 +168,7 @@ class AlertConsolidator:
 
                 # Mensagem do alerta
                 message_label = ttkb.Label(alert_frame, text=alert['message'],
-                                          wraplength=520, justify=tk.LEFT, bootstyle="light")
+                                          wraplength=520, justify=tk.LEFT)
                 message_label.pack(fill=tk.X, pady=(5, 0))
 
                 # Resumo do Alerta
@@ -199,8 +199,9 @@ class AlertConsolidator:
                                bootstyle="success", width=15)
         ok_button.pack(side="right", padx=(5, 0))
         
-        # Configura fechamento da janela
+        # Configura fechamento da janela e rolagem do mouse
         self.consolidated_window.protocol("WM_DELETE_WINDOW", self._close_consolidated_window)
+        self.consolidated_window.bind("<MouseWheel>", self._on_mousewheel)
         
         # Toca som consolidado automaticamente
         self._play_consolidated_sound(alerts)
@@ -276,6 +277,15 @@ class AlertConsolidator:
         
         send_telegram_alert(bot_token, chat_id, message)
     
+    def _on_mousewheel(self, event):
+        """Permite a rolagem da janela de alertas com o scroll do mouse."""
+        if hasattr(self, 'canvas'):
+            # A direção da rolagem pode variar entre sistemas operacionais
+            if event.num == 5 or event.delta == -120:
+                self.canvas.yview_scroll(1, "units")
+            elif event.num == 4 or event.delta == 120:
+                self.canvas.yview_scroll(-1, "units")
+
     def _close_consolidated_window(self):
         """Fecha a janela consolidada."""
         if self.consolidated_window:
