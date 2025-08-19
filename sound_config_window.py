@@ -25,6 +25,7 @@ class SoundConfigWindow:
         # Configura a janela
         self.window.transient(parent_window)
         self.window.grab_set()
+        self.window.protocol("WM_DELETE_WINDOW", self._close_window)
         
         # Carrega configurações de som
         self.sound_config = self.config.get('sound_config', {})
@@ -65,7 +66,7 @@ class SoundConfigWindow:
         scrollbar.pack(side="right", fill="y")
 
         self.canvas = canvas
-        self.window.bind_all("<MouseWheel>", self._on_mousewheel)
+        self.canvas.bind("<MouseWheel>", self._on_mousewheel)
         
         # Configurações de som
         self._create_sound_configs(scrollable_frame)

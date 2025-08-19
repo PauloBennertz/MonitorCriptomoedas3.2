@@ -271,10 +271,14 @@ class CryptoApp:
 
     def _pulse_label(self, label, color_style):
         """Cria um efeito de pulsação visual em um label."""
-        original_style = label['bootstyle']
-        self.root.after(0, lambda: label.config(bootstyle=f"{color_style}"))
-        self.root.after(600, lambda: label.config(bootstyle=f"{color_style}-outline"))
-        self.root.after(1200, lambda: label.config(bootstyle=original_style))
+        try:
+            original_style = label['bootstyle']
+            self.root.after(0, lambda: label.config(bootstyle=f"{color_style}"))
+            self.root.after(600, lambda: label.config(bootstyle=f"{color_style}-outline"))
+            self.root.after(1200, lambda: label.config(bootstyle=original_style))
+        except tk.TclError:
+            # Fallback for widgets that don't support bootstyle (graceful degradation)
+            pass
 
     def start_monitoring(self):
         """Inicia o thread de monitoramento em segundo plano."""
