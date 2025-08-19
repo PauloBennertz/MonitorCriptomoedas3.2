@@ -4,10 +4,12 @@ import time
 import logging
 import copy
 import robust_services
+import os
 from indicators import calculate_rsi, calculate_bollinger_bands, calculate_macd, calculate_emas
 from notification_service import send_telegram_alert
 from pycoingecko import CoinGeckoAPI
 from app_state import load_coin_mapping_cache, save_coin_mapping_cache
+from core_components import ALERT_SUMMARIES
 
 cg_client = CoinGeckoAPI()
 
@@ -130,19 +132,39 @@ def fetch_all_binance_symbols_startup(existing_config):
         logging.warning("Retornando moedas da configuração existente como fallback.")
         return [c['symbol'] for c in existing_config.get('cryptos_to_monitor', [])]
 
-def _get_sound_for_trigger(trigger_msg, sound_config):
-    """Determina o som apropriado para um gatilho de alerta com base na configuração."""
-    if not sound_config: return 'sons/Alerta.mp3'
-    trigger_lower = trigger_msg.lower()
-    if 'rsi sobrecomprado' in trigger_lower: return sound_config.get('overbought', 'sons/sobrecomprado.wav')
-    if 'rsi sobrevendido' in trigger_lower: return sound_config.get('oversold', 'sons/sobrevendido.wav')
-    if 'cruz dourada' in trigger_lower: return sound_config.get('golden_cross', 'sons/cruzamentoAlta.wav')
-    if 'cruz da morte' in trigger_lower: return sound_config.get('death_cross', 'sons/cruzamentoBaixa.wav')
-    if 'preço acima' in trigger_lower: return sound_config.get('price_above', 'sons/precoAcima.wav')
-    if 'preço abaixo' in trigger_lower: return sound_config.get('price_below', 'sons/precoAbaixo.wav')
-    if 'volume' in trigger_lower and 'alto' in trigger_lower: return sound_config.get('high_volume', 'sons/volumeAlto.wav')
-    if 'fuga de capital' in trigger_lower or 'entrada de capital' in trigger_lower: return sound_config.get('critical_alert', 'sons/alertaCritico.wav')
-    return sound_config.get('default_alert', 'sons/Alerta.mp3')
+def _get_sound_for_trigger(trigger_key, sound_config):
+    """Determina o som apropriado para um gatilho de alerta com base na sua chave programática."""
+    if not sound_config:
+        return os.path.join('sons', 'Alerta.mp3')
+
+    key_to_config_map = {
+        'RSI_SOBRECOMPRA': 'overbought',
+        'RSI_SOBREVENDA': 'oversold',
+        'CRUZ_DOURADA': 'golden_cross',
+        'CRUZ_DA_MORTE': 'death_cross',
+        'PRECO_ACIMA': 'price_above',
+        'PRECO_ABAIXO': 'price_below',
+        'VOLUME_ANORMAL': 'high_volume',
+        'FUGA_CAPITAL': 'critical_alert',
+        'ENTRADA_CAPITAL': 'critical_alert',
+    }
+
+    default_sounds = {
+        'overbought': 'sobrecomprado.wav',
+        'oversold': 'sobrevendido.wav',
+        'golden_cross': 'cruzamentoAlta.wav',
+        'death_cross': 'cruzamentoBaixa.wav',
+        'price_above': 'precoAcima.wav',
+        'price_below': 'precoAbaixo.wav',
+        'high_volume': 'volumeAlto.wav',
+        'critical_alert': 'alertaCritico.wav',
+        'default_alert': 'Alerta.mp3',
+    }
+
+    config_key = key_to_config_map.get(trigger_key, 'default_alert')
+    sound_file = sound_config.get(config_key, default_sounds.get(config_key))
+
+    return os.path.join('sons', sound_file)
 
 def _check_and_trigger_alerts(symbol, alert_config, analysis_data, data_queue, sound_config):
     """Verifica e dispara alertas para um símbolo com base nas condições configuradas."""
@@ -154,14 +176,42 @@ def _check_and_trigger_alerts(symbol, alert_config, analysis_data, data_queue, s
     price_change_24h = analysis_data['price_change_24h']
     market_cap = analysis_data.get('market_cap')
 
-    triggers = []
+    # Dicionário para mapear condição a chave e mensagem
+    alert_definitions = {
+        'preco_baixo': {'key': 'PRECO_ABAIXO', 'msg': f"Preço Abaixo de ${conditions.get('preco_baixo', {}).get('value', 0):.2f}"},
+        'preco_alto': {'key': 'PRECO_ACIMA', 'msg': f"Preço Acima de ${conditions.get('preco_alto', {}).get('value', 0):.2f}"},
+        'rsi_sobrevendido': {'key': 'RSI_SOBREVENDA', 'msg': f"RSI Sobrevendido (<= {conditions.get('rsi_sobrevendido', {}).get('value', 30):.1f})"},
+        'rsi_sobrecomprado': {'key': 'RSI_SOBRECOMPRA', 'msg': f"RSI Sobrecomprado (>= {conditions.get('rsi_sobrecomprado', {}).get('value', 70):.1f})"},
+        'bollinger_abaixo': {'key': 'PRECO_ABAIXO_BANDA_INFERIOR', 'msg': "Preço Abaixo da Banda Inferior de Bollinger"},
+        'bollinger_acima': {'key': 'PRECO_ACIMA_BANDA_SUPERIOR', 'msg': "Preço Acima da Banda Superior de Bollinger"},
+        'macd_cruz_baixa': {'key': 'CRUZAMENTO_MACD_BAIXA', 'msg': "MACD: Cruzamento de Baixa"},
+        'macd_cruz_alta': {'key': 'CRUZAMENTO_MACD_ALTA', 'msg': "MACD: Cruzamento de Alta"},
+        'mme_cruz_morte': {'key': 'CRUZ_DA_MORTE', 'msg': "MME: Cruz da Morte (50/200)"},
+        'mme_cruz_dourada': {'key': 'CRUZ_DOURADA', 'msg': "MME: Cruz Dourada (50/200)"},
+        'fuga_capital': {'key': 'FUGA_CAPITAL', 'msg': "Detectada possível fuga de capital significativa"},
+        'entrada_capital': {'key': 'ENTRADA_CAPITAL', 'msg': "Detectada possível entrada de capital significativa"},
+    }
+
+    active_triggers = []
+
+    # Lógica de verificação de condições
+    if conditions.get('preco_baixo', {}).get('enabled') and current_price <= conditions['preco_baixo']['value']: active_triggers.append(alert_definitions['preco_baixo'])
+    if conditions.get('preco_alto', {}).get('enabled') and current_price >= conditions['preco_alto']['value']: active_triggers.append(alert_definitions['preco_alto'])
+    if conditions.get('rsi_sobrevendido', {}).get('enabled') and rsi <= conditions['rsi_sobrevendido']['value']: active_triggers.append(alert_definitions['rsi_sobrevendido'])
+    if conditions.get('rsi_sobrecomprado', {}).get('enabled') and rsi >= conditions['rsi_sobrecomprado']['value']: active_triggers.append(alert_definitions['rsi_sobrecomprado'])
+    if conditions.get('bollinger_abaixo', {}).get('enabled') and analysis_data.get('bollinger_signal') == "Abaixo da Banda": active_triggers.append(alert_definitions['bollinger_abaixo'])
+    if conditions.get('bollinger_acima', {}).get('enabled') and analysis_data.get('bollinger_signal') == "Acima da Banda": active_triggers.append(alert_definitions['bollinger_acima'])
+    if conditions.get('macd_cruz_baixa', {}).get('enabled') and analysis_data.get('macd_signal') == "Cruzamento de Baixa": active_triggers.append(alert_definitions['macd_cruz_baixa'])
+    if conditions.get('macd_cruz_alta', {}).get('enabled') and analysis_data.get('macd_signal') == "Cruzamento de Alta": active_triggers.append(alert_definitions['macd_cruz_alta'])
+    if conditions.get('mme_cruz_morte', {}).get('enabled') and analysis_data.get('mme_cross') == "Cruz da Morte": active_triggers.append(alert_definitions['mme_cruz_morte'])
+    if conditions.get('mme_cruz_dourada', {}).get('enabled') and analysis_data.get('mme_cross') == "Cruz Dourada": active_triggers.append(alert_definitions['mme_cruz_dourada'])
 
     fuga_capital_config = conditions.get('fuga_capital_significativa', {})
     if fuga_capital_config.get('enabled') and market_cap is not None and market_cap > 0:
         try:
             percent_mcap_str, percent_price_str = fuga_capital_config['value'].split(',')
-            if volume_as_percent_of_mcap := (volume_24h / market_cap * 100) > float(percent_mcap_str) and price_change_24h < float(percent_price_str):
-                triggers.append(f"Fuga de Capital (Vol > {volume_as_percent_of_mcap:.2f}% Cap.Merc. e Var < {float(percent_price_str):.2f}%)")
+            if (volume_24h / market_cap * 100) > float(percent_mcap_str) and price_change_24h < float(percent_price_str):
+                active_triggers.append(alert_definitions['fuga_capital'])
         except (ValueError, TypeError):
             logging.warning(f"Configuração de alerta 'fuga de capital' inválida para {symbol}.")
 
@@ -169,34 +219,44 @@ def _check_and_trigger_alerts(symbol, alert_config, analysis_data, data_queue, s
     if entrada_capital_config.get('enabled') and market_cap is not None and market_cap > 0:
         try:
             percent_mcap_str, percent_price_str = entrada_capital_config['value'].split(',')
-            if volume_as_percent_of_mcap := (volume_24h / market_cap * 100) > float(percent_mcap_str) and price_change_24h > float(percent_price_str):
-                triggers.append(f"Entrada de Capital (Vol > {volume_as_percent_of_mcap:.2f}% Cap.Merc. e Var > {float(percent_price_str):.2f}%)")
+            if (volume_24h / market_cap * 100) > float(percent_mcap_str) and price_change_24h > float(percent_price_str):
+                active_triggers.append(alert_definitions['entrada_capital'])
         except (ValueError, TypeError):
             logging.warning(f"Configuração de alerta 'entrada de capital' inválida para {symbol}.")
 
-    if conditions.get('preco_baixo', {}).get('enabled') and current_price <= conditions['preco_baixo']['value']: triggers.append(f"Preço Abaixo de ${conditions['preco_baixo']['value']:.2f} (Atual: ${current_price:.2f})")
-    if conditions.get('preco_alto', {}).get('enabled') and current_price >= conditions['preco_alto']['value']: triggers.append(f"Preço Acima de ${conditions['preco_alto']['value']:.2f} (Atual: ${current_price:.2f})")
-    if conditions.get('rsi_sobrevendido', {}).get('enabled') and rsi <= conditions['rsi_sobrevendido']['value']: triggers.append(f"RSI Sobrevendido (RSI <= {conditions['rsi_sobrevendido']['value']:.2f} | Atual: {rsi:.2f})")
-    if conditions.get('rsi_sobrecomprado', {}).get('enabled') and rsi >= conditions['rsi_sobrecomprado']['value']: triggers.append(f"RSI Sobrecomprado (RSI >= {conditions['rsi_sobrecomprado']['value']:.2f} | Atual: {rsi:.2f})")
-    if conditions.get('bollinger_abaixo', {}).get('enabled') and analysis_data.get('bollinger_signal') == "Abaixo da Banda": triggers.append("Preço Abaixo da Banda Inferior de Bollinger")
-    if conditions.get('bollinger_acima', {}).get('enabled') and analysis_data.get('bollinger_signal') == "Acima da Banda": triggers.append("Preço Acima da Banda Superior de Bollinger")
-    if conditions.get('macd_cruz_baixa', {}).get('enabled') and analysis_data.get('macd_signal') == "Cruzamento de Baixa": triggers.append("MACD: Cruzamento de Baixa")
-    if conditions.get('macd_cruz_alta', {}).get('enabled') and analysis_data.get('macd_signal') == "Cruzamento de Alta": triggers.append("MACD: Cruzamento de Alta")
-    if conditions.get('mme_cruz_morte', {}).get('enabled') and analysis_data.get('mme_cross') == "Cruz da Morte": triggers.append("MME: Cruz da Morte (MME 50 abaixo da MME 200)")
-    if conditions.get('mme_cruz_dourada', {}).get('enabled') and analysis_data.get('mme_cross') == "Cruz Dourada": triggers.append("MME: Cruz Dourada (MME 50 acima da MME 200)")
-
-    for trigger_msg in triggers:
-        if trigger_msg not in triggered_conditions:
+    for trigger in active_triggers:
+        trigger_key = trigger['key']
+        if trigger_key not in triggered_conditions:
             market_cap_str = f"${market_cap:,.0f}" if market_cap is not None else "N/A"
-            formatted_message = (f"🚨 ALERTA: {symbol} 🚨\n\nDisparo: {trigger_msg}\nPreço Atual: ${current_price:,.2f}\n"
-                               f"Volume 24h: ${volume_24h:,.0f}\nCapitalização de Mercado: {market_cap_str}\n"
-                               f"Variação 24h: {price_change_24h:.2f}%\n\nObservações: {alert_config.get('notes', 'Nenhuma')}")
+            user_notes = alert_config.get('notes', '').strip()
+            summary = ALERT_SUMMARIES.get(trigger_key, "Consulte o guia para mais detalhes.")
             
-            sound_path = _get_sound_for_trigger(trigger_msg, sound_config)
-            alert_payload = {'symbol': symbol, 'message': formatted_message, 'sound': sound_path, 'trigger': trigger_msg, 'analysis_data': analysis_data}
+            observacoes = summary
+            if user_notes:
+                observacoes = f"{user_notes}\n\nAnálise: {summary}"
+
+            formatted_message = (
+                f"🚨 ALERTA: {symbol} 🚨\n\n"
+                f"Disparo: {trigger['msg']} (Atual: ${current_price:,.2f})\n"
+                f"Preço Atual: ${current_price:,.2f}\n"
+                f"Volume 24h: ${volume_24h:,.0f}\n"
+                f"Capitalização de Mercado: {market_cap_str}\n"
+                f"Variação 24h: {price_change_24h:.2f}%\n\n"
+                f"Observações: {observacoes}"
+            )
+
+            sound_path = _get_sound_for_trigger(trigger_key, sound_config)
+            alert_payload = {
+                'symbol': symbol,
+                'message': formatted_message,
+                'sound': sound_path,
+                'trigger': trigger_key, # Usando a chave programática
+                'analysis_data': analysis_data
+            }
             data_queue.put({'type': 'alert', 'payload': alert_payload})
-            triggered_conditions.append(trigger_msg)
-    alert_config['triggered_conditions'] = [t for t in triggered_conditions if t in set(triggers)]
+            triggered_conditions.append(trigger_key)
+
+    alert_config['triggered_conditions'] = [t_key for t_key in triggered_conditions if any(t['key'] == t_key for t in active_triggers)]
 
 def _analyze_symbol(symbol, ticker_data, market_cap=None):
     """Coleta e analisa todos os dados técnicos para um único símbolo."""
