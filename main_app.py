@@ -9,6 +9,8 @@ import sys
 import queue
 import logging
 import time
+import webbrowser
+from urllib.parse import quote
 from notification_service import send_telegram_alert, AlertConsolidator
 import robust_services
 from monitoring_service import (
@@ -132,6 +134,8 @@ class CryptoApp:
         help_menu = tk.Menu(self.menu_bar, tearoff=0)
         self.menu_bar.add_cascade(label="Ajuda", menu=help_menu)
         help_menu.add_command(label="Guia de Indicadores", command=self.show_help_window)
+        help_menu.add_separator()
+        help_menu.add_command(label="📧 Enviar Feedback, Erros e Sugestões", command=self.send_feedback)
 
         header_frame = ttkb.Frame(self.root, bootstyle="dark")
         header_frame.pack(side="top", fill="x")
@@ -388,6 +392,26 @@ class CryptoApp:
     def show_help_window(self):
         """Abre a janela de ajuda com o guia de indicadores."""
         HelpWindow(self)
+
+    def send_feedback(self):
+        """Abre o cliente de e-mail padrão para enviar feedback."""
+        try:
+            recipient = "feedback.devjulio@gmail.com"
+            subject = "Feedback/Sugestão para Crypto Monitor Pro"
+            body = """
+Por favor, descreva seu feedback, relate um erro ou faça uma sugestão.
+Se estiver relatando um erro, inclua os passos para reproduzi-lo.
+
+----------------------------------------------------
+
+"""
+            encoded_subject = quote(subject)
+            encoded_body = quote(body)
+            webbrowser.open(f"mailto:{recipient}?subject={encoded_subject}&body={encoded_body}", new=1)
+            logging.info("Tentativa de abrir cliente de e-mail para feedback.")
+        except Exception as e:
+            logging.error(f"Não foi possível abrir o cliente de e-mail: {e}")
+            messagebox.showerror("Erro", "Não foi possível abrir o seu cliente de e-mail padrão. Por favor, envie seu feedback manualmente para feedback.devjulio@gmail.com")
 
     def center_toplevel_on_main(self, toplevel_window):
         """Centraliza uma janela Toplevel em relação à janela principal."""
