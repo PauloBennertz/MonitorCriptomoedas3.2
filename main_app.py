@@ -33,6 +33,7 @@ from sound_config_window import SoundConfigWindow
 from coin_manager import CoinManager
 from help_window import HelpWindow
 from app_state import get_last_fetch_timestamp, update_last_fetch_timestamp
+from update_checker import check_for_updates
 
 try:
     from PIL import Image, ImageTk
@@ -606,6 +607,10 @@ def main():
         config['market_analysis_config'] = {'top_n': 25, 'min_market_cap': 50000000}
 
     root = ttkb.Window(themename="darkly")
+
+    # Adiciona a verificação de atualização na inicialização
+    check_for_updates(root, on_startup=True)
+
     root.withdraw()  # Esconde a janela principal inicialmente
 
     loading_window = LoadingWindow(root)
