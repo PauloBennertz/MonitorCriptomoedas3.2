@@ -396,11 +396,11 @@ class CryptoApp:
     def send_feedback(self):
         """Abre o cliente de e-mail padrão para enviar feedback."""
         try:
-            recipient = "feedback.devjulio@gmail.com"
+            recipient = "monitorcriptopro@gmail.com"
             subject = "Feedback/Sugestão para Crypto Monitor Pro"
             body = """
 Por favor, descreva seu feedback, relate um erro ou faça uma sugestão.
-Se estiver relatando um erro, inclua os passos para reproduzi-lo.
+Se estiver relatando um erro, inclua os passos para reproduzi-lo. Muito obrigado!
 
 ----------------------------------------------------
 
