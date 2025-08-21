@@ -1,5 +1,77 @@
 [
   {
+    "timestamp": "2025-08-21T10:10:00.481059",
+    "symbol": "ETHUSDT",
+    "trigger": "PRECO_ACIMA",
+    "data": {
+      "symbol": "ETHUSDT",
+      "current_price": 4264.84,
+      "price_change_24h": 1.795,
+      "volume_24h": 2737943051.85349,
+      "rsi_value": 32.4336304979562,
+      "rsi_signal": "32.43",
+      "bollinger_signal": "Nenhum",
+      "macd_signal": "Nenhum",
+      "mme_cross": "Nenhum",
+      "hilo_signal": "Nenhum",
+      "market_cap": 70225
+    }
+  },
+  {
+    "timestamp": "2025-08-21T10:04:56.416266",
+    "symbol": "ETHUSDT",
+    "trigger": "PRECO_ACIMA",
+    "data": {
+      "symbol": "ETHUSDT",
+      "current_price": 4259.87,
+      "price_change_24h": 1.498,
+      "volume_24h": 2735384338.88129,
+      "rsi_value": 30.678659861539387,
+      "rsi_signal": "30.68",
+      "bollinger_signal": "Nenhum",
+      "macd_signal": "Nenhum",
+      "mme_cross": "Nenhum",
+      "hilo_signal": "Nenhum",
+      "market_cap": 69777
+    }
+  },
+  {
+    "timestamp": "2025-08-21T09:59:52.655600",
+    "symbol": "ETHUSDT",
+    "trigger": "PRECO_ACIMA",
+    "data": {
+      "symbol": "ETHUSDT",
+      "current_price": 4249.56,
+      "price_change_24h": 1.087,
+      "volume_24h": 2726142740.794752,
+      "rsi_value": 23.248012499425798,
+      "rsi_signal": "23.25",
+      "bollinger_signal": "Abaixo da Banda",
+      "macd_signal": "Nenhum",
+      "mme_cross": "Nenhum",
+      "hilo_signal": "HiLo Sell",
+      "market_cap": 70145
+    }
+  },
+  {
+    "timestamp": "2025-08-21T09:54:48.941809",
+    "symbol": "ETHUSDT",
+    "trigger": "PRECO_ACIMA",
+    "data": {
+      "symbol": "ETHUSDT",
+      "current_price": 4246.05,
+      "price_change_24h": 1.015,
+      "volume_24h": 2728249792.312791,
+      "rsi_value": 22.87173922871763,
+      "rsi_signal": "22.87",
+      "bollinger_signal": "Abaixo da Banda",
+      "macd_signal": "Nenhum",
+      "mme_cross": "Nenhum",
+      "hilo_signal": "HiLo Sell",
+      "market_cap": 70145
+    }
+  },
+  {
     "timestamp": "2025-08-21T07:42:22.174480",
     "symbol": "ETHUSDT",
     "trigger": "PRECO_ACIMA",
