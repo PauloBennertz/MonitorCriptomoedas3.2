@@ -229,7 +229,7 @@ class CryptoApp:
             
             card_container = ttkb.Frame(self.scrollable_frame, bootstyle="dark")
             
-            card = CryptoCard(card_container, symbol, coin_name)
+            card = CryptoCard(card_container, symbol, coin_name, click_callback=self.open_alert_config_for_coin)
             card.pack(fill='both', expand=True)
             self.coin_cards[symbol] = card
             
@@ -363,6 +363,10 @@ class CryptoApp:
     def show_alert_manager(self):
         """Abre a janela do gerenciador de alertas."""
         AlertManagerWindow(self, self.coin_manager)
+
+    def open_alert_config_for_coin(self, symbol):
+        """Abre o gerenciador de alertas focado em uma moeda específica."""
+        AlertManagerWindow(self, self.coin_manager, initial_symbol=symbol)
 
     def show_capital_flow_window(self):
         """Abre a janela de análise de fluxo de capital."""

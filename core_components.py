@@ -56,11 +56,14 @@ def get_application_path():
 
 class CryptoCard(ttkb.Frame):
     """Componente visual para exibir os dados de uma criptomoeda."""
-    def __init__(self, parent, symbol, coin_name=""):
+    def __init__(self, parent, symbol, coin_name="", click_callback=None):
         """Inicializa o card com o símbolo e nome da moeda."""
         super().__init__(parent, padding=15, bootstyle="secondary")
         self.symbol = symbol
         self.previous_price = 0.0
+
+        if click_callback:
+            self.bind_click(click_callback)
 
         header_frame = ttkb.Frame(self, bootstyle="secondary")
         header_frame.pack(fill='x', pady=(0, 10))
@@ -104,6 +107,23 @@ class CryptoCard(ttkb.Frame):
         value_label = ttkb.Label(indicator_frame, text="Carregando...", font=("Segoe UI", 10, "bold"), bootstyle="light")
         value_label.pack(side='right')
         self.data_labels[key] = value_label
+
+    def bind_click(self, callback):
+        """Associa um evento de clique a este card e a todos os seus widgets filhos."""
+        self.config(cursor="hand2")
+        self.bind("<Button-1>", lambda event: callback(self.symbol))
+        self._bind_recursive(self, callback)
+
+    def _bind_recursive(self, widget, callback):
+        """Vincula recursivamente o evento de clique a um widget e seus filhos."""
+        # Itera sobre os filhos diretos do widget
+        for child in widget.winfo_children():
+            # Vincula o evento de clique ao filho
+            child.bind("<Button-1>", lambda event: callback(self.symbol))
+            # Muda o cursor para indicar que é clicável
+            child.config(cursor="hand2")
+            # Chama a função recursivamente para os filhos do filho
+            self._bind_recursive(child, callback)
 
 class Tooltip:
     """Cria uma caixa de dicas que aparece ao passar o mouse sobre um widget."""
@@ -498,7 +518,7 @@ class AlertConfigDialog(ttkb.Toplevel):
 
 class AlertManagerWindow(ttkb.Toplevel):
     """Janela para gerenciar (adicionar/remover/configurar) todas as moedas monitoradas."""
-    def __init__(self, parent_app, coin_manager):
+    def __init__(self, parent_app, coin_manager, initial_symbol=None):
         """Inicializa o gerenciador de alertas."""
         super().__init__(parent_app)
         self.parent_app = parent_app
@@ -594,6 +614,19 @@ class AlertManagerWindow(ttkb.Toplevel):
         self.search_var.trace_add("write", self._filter_symbols)
         self.parent_app.center_toplevel_on_main(self)
         self.bind_all("<MouseWheel>", self._on_mousewheel)
+
+        if initial_symbol:
+            self.after(100, lambda: self.focus_on_symbol(initial_symbol))
+
+    def focus_on_symbol(self, symbol):
+        """Seleciona uma moeda específica e abre sua janela de configuração."""
+        if self.symbols_tree.exists(symbol):
+            self.symbols_tree.selection_set(symbol)
+            self.symbols_tree.focus(symbol)
+            self.on_symbol_selected()
+            self.open_config_alert_dialog()
+        else:
+            messagebox.showwarning("Símbolo não encontrado", f"O símbolo '{symbol}' não está na lista de moedas monitoradas.", parent=self)
 
     def _on_mousewheel(self, event):
         """Permite a rolagem contextual com o scroll do mouse."""
