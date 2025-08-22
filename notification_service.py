@@ -33,6 +33,7 @@ class AlertConsolidator:
         self.consolidated_window = None
         self.alert_lock = threading.Lock()
         self.is_showing = False
+        self.suppress_alerts = False  # Nova flag para pausar alertas
         self.last_alert_time = 0  # Para agrupar alertas por tempo
         
         # Inicia thread para processar alertas consolidados
@@ -59,7 +60,7 @@ class AlertConsolidator:
             should_show = False
 
             with self.alert_lock:
-                if self.pending_alerts and not self.is_showing:
+                if self.pending_alerts and not self.is_showing and not self.suppress_alerts:
                     current_time = time.time()
 
                     # Decide se deve iniciar um novo lote de alertas
