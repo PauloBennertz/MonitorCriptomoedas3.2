@@ -668,6 +668,7 @@ def start_main_application(root, config, all_symbols_list, coingecko_mapping):
             sys.exit("Configuração inicial cancelada.")
             
     app = CryptoApp(root, config, all_symbols_list, coin_manager, coingecko_mapping)
+    root.app = app  # Anexa a instância da aplicação à janela raiz
     root.protocol("WM_DELETE_WINDOW", app.on_closing)
 
 if __name__ == "__main__":
