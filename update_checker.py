@@ -19,7 +19,7 @@ except (ImportError, ModuleNotFoundError):
         return os.path.dirname(os.path.abspath(__file__))
 
 # --- Constantes ---
-GITHUB_API_URL = "https://api.github.com/repos/devjulio/MonitorCriptomoedas3.1/releases/latest"
+GITHUB_API_URL = "https://api.github.com/repos/PauloBennertz/MonitorCriptomoedas3.2/releases/latest"
 CONFIG_FILE_NAME = "config.json"
 UPDATER_SCRIPT_NAME = "updater.bat"
 DOWNLOADED_FILE_NAME = "update.exe"
