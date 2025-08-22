@@ -36,7 +36,7 @@ class UpdateNotificationWindow(tk.Toplevel):
         self.assets = assets
         self.result = "later"
         self.title("Nova Versão Disponível!")
-        self.geometry("600x550")
+        self.geometry("600x480")
         self.transient(parent)
         self.grab_set()
         self.protocol("WM_DELETE_WINDOW", self._on_closing)
@@ -50,8 +50,8 @@ class UpdateNotificationWindow(tk.Toplevel):
         ttkb.Label(main_frame, text="Novidades da versão:", font=("Segoe UI", 12, "bold")).pack(anchor="w", pady=(15, 5))
 
         notes_frame = ttkb.Frame(main_frame, bootstyle="secondary", padding=2)
-        notes_frame.pack(fill="both", expand=True)
-        text_widget = scrolledtext.ScrolledText(notes_frame, wrap="word", relief="flat", font=("Segoe UI", 10))
+        notes_frame.pack(fill="x", expand=False)
+        text_widget = scrolledtext.ScrolledText(notes_frame, wrap="word", relief="flat", font=("Segoe UI", 10), height=15)
         text_widget.insert("1.0", self.notes)
         text_widget.config(state="disabled")
         text_widget.pack(fill="both", expand=True, padx=5, pady=5)
