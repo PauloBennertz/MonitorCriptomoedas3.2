@@ -35,6 +35,8 @@ from help_window import HelpWindow
 from app_state import get_last_fetch_timestamp, update_last_fetch_timestamp
 from update_checker import check_for_updates
 
+APP_VERSION = "3.1"
+
 try:
     from PIL import Image, ImageTk
 except ImportError:
@@ -86,6 +88,7 @@ class CryptoApp:
         self.all_symbols = all_symbols
         self.coin_manager = coin_manager
         self.coingecko_mapping = coingecko_mapping
+        self.version = APP_VERSION
         self.data_queue = queue.Queue()
         self.monitoring_thread = None
         self.stop_monitoring_event = threading.Event()
@@ -136,6 +139,7 @@ class CryptoApp:
         self.menu_bar.add_cascade(label="Ajuda", menu=help_menu)
         help_menu.add_command(label="Guia de Indicadores", command=self.show_help_window)
         help_menu.add_separator()
+        help_menu.add_command(label="Verificar Atualizações", command=self.check_for_updates_manual)
         help_menu.add_command(label="📧 Enviar Feedback, Erros e Sugestões", command=self.send_feedback)
 
         header_frame = ttkb.Frame(self.root, bootstyle="dark")
@@ -209,7 +213,7 @@ class CryptoApp:
         footer_frame.pack(side="bottom", fill="x")
         
         ttkb.Label(footer_frame, text=f"Sessão iniciada: {datetime.now().strftime('%d/%m/%Y %H:%M')}", font=("Segoe UI", 9), bootstyle="secondary").pack(side="left")
-        ttkb.Label(footer_frame, text="© 2023 Crypto Monitor Pro", font=("Segoe UI", 9), bootstyle="secondary").pack(side="right")
+        ttkb.Label(footer_frame, text="© 2025 Crypto Monitor Pro", font=("Segoe UI", 9), bootstyle="secondary").pack(side="right")
 
         self.update_coin_cards_display()
 
@@ -393,6 +397,10 @@ class CryptoApp:
     def show_help_window(self):
         """Abre a janela de ajuda com o guia de indicadores."""
         HelpWindow(self)
+
+    def check_for_updates_manual(self):
+        """Verifica manualmente se há atualizações."""
+        check_for_updates(self.root, self.version, on_startup=False)
 
     def send_feedback(self):
         """Abre o cliente de e-mail padrão para enviar feedback."""
@@ -610,7 +618,7 @@ def main():
     root = ttkb.Window(themename="darkly")
 
     # Adiciona a verificação de atualização na inicialização
-    check_for_updates(root, on_startup=True)
+    check_for_updates(root, APP_VERSION, on_startup=True)
 
     root.withdraw()  # Esconde a janela principal inicialmente
 
