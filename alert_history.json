@@ -1,5 +1,23 @@
 [
   {
+    "timestamp": "2025-08-22T08:21:15.482481",
+    "symbol": "ETHUSDT",
+    "trigger": "PRECO_ACIMA",
+    "data": {
+      "symbol": "ETHUSDT",
+      "current_price": 4282.01,
+      "price_change_24h": -0.334,
+      "volume_24h": 2103471140.4891,
+      "rsi_value": 59.081685621254266,
+      "rsi_signal": "59.08",
+      "bollinger_signal": "Nenhum",
+      "macd_signal": "Nenhum",
+      "mme_cross": "Nenhum",
+      "hilo_signal": "Nenhum",
+      "market_cap": 68489
+    }
+  },
+  {
     "timestamp": "2025-08-22T03:17:04.242076",
     "symbol": "ETHUSDT",
     "trigger": "PRECO_ACIMA",
