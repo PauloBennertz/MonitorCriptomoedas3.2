@@ -36,7 +36,7 @@ class UpdateNotificationWindow(tk.Toplevel):
         self.assets = assets
         self.result = "later"
         self.title("Nova Versão Disponível!")
-        self.geometry("600x450")
+        self.geometry("600x500")
         self.transient(parent)
         self.grab_set()
         self.protocol("WM_DELETE_WINDOW", self._on_closing)
@@ -248,7 +248,7 @@ start "" "{current_exe_path}"
 
 def launch_updater_and_exit(root):
     """ Cria e executa o script de atualização, depois fecha a aplicação. """
-    if not messagebox.askokcancel("Pronto para Atualizar", "O download foi concluído. A aplicação será reiniciada para aplicar a atualização."):
+    if not messagebox.askokcancel("Pronto para Atualizar", "download concluido, necessário reinicialização do programa"):
         return
 
     try:
