@@ -19,7 +19,6 @@ except (ImportError, ModuleNotFoundError):
         return os.path.dirname(os.path.abspath(__file__))
 
 # --- Constantes ---
-CURRENT_VERSION = "3.1"
 GITHUB_API_URL = "https://api.github.com/repos/devjulio/MonitorCriptomoedas3.1/releases/latest"
 CONFIG_FILE_NAME = "config.json"
 UPDATER_SCRIPT_NAME = "updater.bat"
@@ -112,7 +111,7 @@ class DownloadProgressWindow(tk.Toplevel):
 
 # --- Lógica de Atualização ---
 
-def check_for_updates(root, on_startup=False):
+def check_for_updates(root, current_version, on_startup=False):
     """ Verifica atualizações. Se on_startup for True, força a atualização se a flag estiver ativa. """
     if on_startup:
         config_path = _get_config_path()
@@ -121,12 +120,12 @@ def check_for_updates(root, on_startup=False):
                 config = json.load(f)
             if config.get('update_on_startup'):
                 print("Flag 'update_on_startup' encontrada. Tentando atualizar...")
-                threading.Thread(target=_perform_check, args=(root, True), daemon=True).start()
+                threading.Thread(target=_perform_check, args=(root, current_version, True), daemon=True).start()
                 return # Impede a verificação dupla
 
-    threading.Thread(target=_perform_check, args=(root, False), daemon=True).start()
+    threading.Thread(target=_perform_check, args=(root, current_version, False), daemon=True).start()
 
-def _perform_check(root, force_update=False):
+def _perform_check(root, current_version, force_update=False):
     """ Realiza a chamada à API e compara as versões. """
     try:
         response = requests.get(GITHUB_API_URL, timeout=15)
@@ -135,7 +134,7 @@ def _perform_check(root, force_update=False):
         tag_name = latest_release.get("tag_name", "0.0.0")
         latest_version_str = tag_name.lstrip('v')
 
-        if force_update or parse_version(latest_version_str) > parse_version(CURRENT_VERSION):
+        if force_update or parse_version(latest_version_str) > parse_version(current_version):
             assets = latest_release.get("assets", [])
             if force_update:
                 root.after(0, download_and_install, root, assets)
