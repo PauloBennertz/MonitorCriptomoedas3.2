@@ -30,6 +30,7 @@ from api_config_window import ApiConfigWindow
 from capital_flow_window import CapitalFlowWindow
 from token_movers_window import TokenMoversWindow
 from sound_config_window import SoundConfigWindow
+from dynamic_view_window import DynamicViewWindow
 from coin_manager import CoinManager
 from help_window import HelpWindow
 from app_state import get_last_fetch_timestamp, update_last_fetch_timestamp
@@ -129,6 +130,8 @@ class CryptoApp:
         analysis_menu.add_command(label="💹 Fluxo de Capital (Categorias)", command=self.show_capital_flow_window)
         analysis_menu.add_command(label="📈 Ganhadores e Perdedores", command=self.show_token_movers_window)
         analysis_menu.add_command(label="🔔 Histórico de Alertas", command=self.show_alert_history_window)
+        analysis_menu.add_separator()
+        analysis_menu.add_command(label="✨ Visão Dinâmica", command=self.show_dynamic_view_window)
         
         config_menu = tk.Menu(self.menu_bar, tearoff=0)
         self.menu_bar.add_cascade(label="⚙️ Configurações", menu=config_menu)
@@ -384,6 +387,10 @@ class CryptoApp:
     def show_alert_history_window(self):
         """Abre a janela do histórico de alertas."""
         AlertHistoryWindow(self)
+
+    def show_dynamic_view_window(self):
+        """Abre a janela de visão dinâmica."""
+        DynamicViewWindow(self.root)
     
     def show_sound_config_window(self):
         """Abre a janela de configuração de sons."""
