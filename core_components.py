@@ -7,6 +7,7 @@ try:
 except ImportError:
     winsound = None
 import ttkbootstrap as ttkb
+from utils import get_application_path
 
 TOOLTIP_DEFINITIONS = {
     "preco_baixo": "Alerta quando o preço da moeda cai e atinge o valor que você definiu.",
@@ -44,15 +45,6 @@ ALERT_SUMMARIES = {
     'MARTELO_ALTA': "Padrão de vela 'Martelo': Pode indicar uma reversão de baixa para alta.",
     'ESTRELA_CADENTE_BAIXA': "Padrão de vela 'Estrela Cadente': Pode indicar uma reversão de alta para baixa."
 }
-
-def get_application_path():
-    """Retorna o caminho do diretório da aplicação, compatível com PyInstaller."""
-    if getattr(sys, 'frozen', False):
-        if hasattr(sys, '_MEIPASS'):
-            return sys._MEIPASS  # Modo --onefile
-        else:
-            return os.path.dirname(sys.executable)  # Modo --onedir
-    return os.path.dirname(os.path.abspath(__file__))
 
 class CryptoCard(ttkb.Frame):
     """Componente visual para exibir os dados de uma criptomoeda."""
@@ -250,7 +242,7 @@ class StartupConfigDialog(ttkb.Toplevel):
                 default_alert_config = {"notes": "", "sound": "sons/Alerta.mp3", "conditions": { "preco_baixo": {"enabled": False, "value": 0.0}, "preco_alto": {"enabled": False, "value": 0.0}, "rsi_sobrevendido": {"enabled": True, "value": 30.0}, "rsi_sobrecomprado": {"enabled": True, "value": 70.0}, "bollinger_abaixo": {"enabled": True}, "bollinger_acima": {"enabled": True}, "macd_cruz_baixa": {"enabled": True}, "macd_cruz_alta": {"enabled": True}, "mme_cruz_morte": {"enabled": True}, "mme_cruz_dourada": {"enabled": True}, "hilo_compra": {"enabled": True}, "hilo_venda": {"enabled": True}, "fuga_capital_significativa": {"enabled": False, "value": "0.5, -2.0"}, "entrada_capital_significativa": {"enabled": False, "value": "0.3, 1.0"} }, "triggered_conditions": []}
                 new_config_list.append({"symbol": symbol, "alert_config": default_alert_config})
         self.parent_app.config["cryptos_to_monitor"] = new_config_list
-        self.parent_app.save_config()
+        self.parent_app.app_logic.save_config()
         self.parent_app.update_coin_cards_display()
         messagebox.showinfo("Sucesso", "Lista de moedas atualizada.", parent=self)
         self.destroy()
@@ -498,11 +490,11 @@ class AlertConfigDialog(ttkb.Toplevel):
 
 class AlertManagerWindow(ttkb.Toplevel):
     """Janela para gerenciar (adicionar/remover/configurar) todas as moedas monitoradas."""
-    def __init__(self, parent_app, coin_manager):
+    def __init__(self, parent_app, app_logic):
         """Inicializa o gerenciador de alertas."""
         super().__init__(parent_app)
         self.parent_app = parent_app
-        self.coin_manager = coin_manager
+        self.app_logic = app_logic
         self.title("Gerenciador de Alertas")
         self.geometry("1200x700")
         self.minsize(900, 600)
@@ -687,18 +679,18 @@ class AlertManagerWindow(ttkb.Toplevel):
 
     def manage_monitored_symbols(self):
         """Abre a janela de diálogo para adicionar/remover moedas."""
-        dialog = ManageSymbolsDialog(self, self.coin_manager)
+        dialog = ManageSymbolsDialog(self, self.app_logic)
         self.wait_window(dialog)
         self._populate_symbols_tree()
 
 class ManageSymbolsDialog(ttkb.Toplevel):
     """Janela de diálogo para adicionar e remover moedas da lista de monitoramento."""
-    def __init__(self, parent_manager, coin_manager):
+    def __init__(self, parent_manager, app_logic):
         """Inicializa o diálogo de gerenciamento de moedas."""
         super().__init__(parent_manager.parent_app)
         self.parent_app = parent_manager.parent_app
         self.parent_manager = parent_manager
-        self.coin_manager = coin_manager
+        self.app_logic = app_logic
         self.title("Gerenciar Moedas Monitoradas")
         self.geometry("800x600")
         self.transient(self.master)
@@ -845,7 +837,7 @@ class ManageSymbolsDialog(ttkb.Toplevel):
                 })
 
         self.parent_app.config["cryptos_to_monitor"] = new_config_list
-        self.parent_app.save_config()
+        self.parent_app.app_logic.save_config()
         self.parent_app.update_coin_cards_display() # Atualiza a tela principal
         self.parent_manager._populate_symbols_tree() # Atualiza a lista no AlertManagerWindow
         messagebox.showinfo("Sucesso", "Lista de moedas atualizada.", parent=self)

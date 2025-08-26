@@ -86,7 +86,7 @@ class MarketAnalysisConfigWindow(ttkb.Toplevel):
             }
             
             # Salva o arquivo config.json
-            self.parent_app.save_config()
+            self.parent_app.app_logic.save_config()
             
             messagebox.showinfo("Sucesso", "Configurações salvas! A próxima análise usará os novos valores.", parent=self)
             self.destroy()

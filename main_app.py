@@ -13,14 +13,16 @@ import webbrowser
 from urllib.parse import quote
 from notification_service import send_telegram_alert, AlertConsolidator
 import robust_services
-from monitoring_service import (
+from app_logic import (
     run_monitoring_cycle,
     get_coingecko_global_mapping,
     fetch_all_binance_symbols_startup,
-    get_btc_dominance
+    get_btc_dominance,
+    run_single_symbol_update,
+    AppLogic,
+    fetch_initial_data
 )
 from core_components import (
-    get_application_path,
     CryptoCard,
     AlertHistoryWindow,
     AlertManagerWindow,
@@ -30,7 +32,6 @@ from api_config_window import ApiConfigWindow
 from capital_flow_window import CapitalFlowWindow
 from token_movers_window import TokenMoversWindow
 from sound_config_window import SoundConfigWindow
-from coin_manager import CoinManager
 from help_window import HelpWindow
 from app_state import get_last_fetch_timestamp, update_last_fetch_timestamp
 from update_checker import check_for_updates
@@ -81,19 +82,19 @@ class LoadingWindow(tk.Toplevel):
 
 class CryptoApp:
     """Classe principal da aplicação que gerencia a UI e os serviços de backend."""
-    def __init__(self, root, config, all_symbols, coin_manager, coingecko_mapping):
+    def __init__(self, root, app_logic, all_symbols, coingecko_mapping):
         """Inicializa a aplicação, configura a UI e inicia os serviços."""
         self.root = root
-        self.config = config
+        self.app_logic = app_logic
+        self.config = app_logic.config
         self.all_symbols = all_symbols
-        self.coin_manager = coin_manager
         self.coingecko_mapping = coingecko_mapping
         self.version = APP_VERSION
         self.data_queue = queue.Queue()
         self.monitoring_thread = None
         self.stop_monitoring_event = threading.Event()
         self.coin_cards = {}
-        self.alert_history = self.load_alert_history()
+        self.alert_history = self.app_logic.alert_history
         self.countdown_job = None
         
         self.setup_logging()
@@ -318,7 +319,7 @@ class CryptoApp:
 
     def handle_alert(self, payload):
         """Processa um alerta recebido do serviço de monitoramento."""
-        self.log_and_save_alert(payload.get('symbol'), payload.get('trigger'), payload.get('analysis_data'))
+        self.app_logic.log_and_save_alert(payload.get('symbol'), payload.get('trigger'), payload.get('analysis_data'))
         self.alert_consolidator.add_alert(payload.get('symbol'), payload.get('trigger'), payload.get('message'), payload.get('sound'))
         send_telegram_alert(self.config.get('telegram_bot_token'), self.config.get('telegram_chat_id'), payload.get('message'))
 
@@ -328,46 +329,14 @@ class CryptoApp:
             logging.info("Fechando a aplicação...")
             self.stop_monitoring_event.set()
             if self.monitoring_thread: self.monitoring_thread.join(timeout=5)
-            self.save_config()
-            self.save_alert_history()
+            self.app_logic.save_config()
+            self.app_logic.save_alert_history()
             self.root.destroy()
             sys.exit()
 
-    def save_config(self):
-        """Salva a configuração atual no arquivo config.json."""
-        config_path = os.path.join(get_application_path(), "config.json")
-        try:
-            with open(config_path, 'w', encoding='utf-8') as f: json.dump(self.config, f, indent=2)
-            logging.info("Configurações salvas com sucesso.")
-        except Exception as e:
-            logging.error(f"Erro ao salvar configurações: {e}")
-
-    def load_alert_history(self):
-        """Carrega o histórico de alertas do arquivo alert_history.json."""
-        history_path = os.path.join(get_application_path(), "alert_history.json")
-        try:
-            with open(history_path, 'r', encoding='utf-8') as f: return json.load(f)
-        except (FileNotFoundError, json.JSONDecodeError):
-            return []
-
-    def save_alert_history(self):
-        """Salva o histórico de alertas atual no arquivo alert_history.json."""
-        history_path = os.path.join(get_application_path(), "alert_history.json")
-        try:
-            with open(history_path, 'w', encoding='utf-8') as f: json.dump(self.alert_history, f, indent=2)
-            logging.info("Histórico de alertas salvo com sucesso.")
-        except Exception as e:
-            logging.error(f"Não foi possível salvar o histórico de alertas: {e}")
-
-    def log_and_save_alert(self, symbol, trigger, data):
-        """Adiciona uma nova entrada de alerta ao histórico."""
-        alert_entry = {'timestamp': datetime.now().isoformat(), 'symbol': symbol, 'trigger': trigger, 'data': data}
-        self.alert_history.insert(0, alert_entry)
-        if len(self.alert_history) > 200: self.alert_history = self.alert_history[:200]
-
     def show_alert_manager(self):
         """Abre a janela do gerenciador de alertas."""
-        AlertManagerWindow(self, self.coin_manager)
+        AlertManagerWindow(self, self.app_logic)
 
     def show_capital_flow_window(self):
         """Abre a janela de análise de fluxo de capital."""
@@ -478,7 +447,6 @@ Se estiver relatando um erro, inclua os passos para reproduzi-lo.
             
             monitored_symbols = [c['symbol'] for c in self.config.get('cryptos_to_monitor', [])]
             
-            from monitoring_service import run_single_symbol_update
             for i, symbol in enumerate(monitored_symbols):
                 robust_services.rate_limiter.wait_if_needed()
                 run_single_symbol_update(symbol, self.config, self.data_queue, self.coingecko_mapping)
@@ -570,48 +538,12 @@ Se estiver relatando um erro, inclua os passos para reproduzi-lo.
             else: button.config(bootstyle=original_style)
         animate_pulse()
 
-def get_current_config():
-    """Carrega a configuração do aplicativo a partir do arquivo config.json."""
-    config_path = os.path.join(get_application_path(), "config.json")
-    try:
-        with open(config_path, 'r', encoding='utf-8') as f: return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return {"cryptos_to_monitor": [], "telegram_bot_token": "", "telegram_chat_id": "", "check_interval_seconds": 300}
-
-def fetch_initial_data(config, data_queue):
-    """Busca todos os dados iniciais necessários para a aplicação em uma thread separada."""
-    try:
-        last_fetch_time = get_last_fetch_timestamp()
-        current_time = time.time()
-
-        # Se a última busca foi a menos de 5 minutos (300s), pula a busca
-        if current_time - last_fetch_time < 300:
-            data_queue.put({'status': 'skipped', 'data': "Busca de dados recentes. Usando cache."})
-            # Mesmo pulando, precisamos dos dados para iniciar a app. Assumimos que estão em cache.
-            # Esta parte pode precisar de mais robustez se o cache puder estar vazio.
-            all_symbols = fetch_all_binance_symbols_startup(config) # Pode vir do cache da exchangeInfo
-            mapping = get_coingecko_global_mapping() # Pode vir do cache da lista de moedas
-            data_queue.put({'status': 'done', 'data': {'symbols': all_symbols, 'mapping': mapping}})
-            return
-
-        data_queue.put({'status': 'symbols', 'data': None})
-        all_symbols = fetch_all_binance_symbols_startup(config)
-
-        data_queue.put({'status': 'mapping', 'data': None})
-        mapping = get_coingecko_global_mapping()
-
-        update_last_fetch_timestamp() # Atualiza o timestamp após uma busca bem sucedida
-
-        data_queue.put({'status': 'done', 'data': {'symbols': all_symbols, 'mapping': mapping}})
-    except Exception as e:
-        logging.critical(f"Erro crítico ao buscar dados iniciais: {e}")
-        data_queue.put({'status': 'error', 'data': str(e)})
-
 def main():
     """Função principal que inicializa a aplicação com uma tela de carregamento."""
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-    config = get_current_config()
+    app_logic = AppLogic()
+    config = app_logic.config
     if 'market_analysis_config' not in config:
         config['market_analysis_config'] = {'top_n': 25, 'min_market_cap': 50000000}
 
@@ -643,7 +575,7 @@ def main():
             elif message['status'] == 'done':
                 loading_window.close()
                 initial_data = message['data']
-                start_main_application(root, config, initial_data['symbols'], initial_data['mapping'])
+                start_main_application(root, app_logic, initial_data['symbols'], initial_data['mapping'])
             elif message['status'] == 'error':
                 loading_window.close()
                 messagebox.showerror("Erro de Inicialização", f"Não foi possível iniciar a aplicação:\n{message['data']}")
@@ -654,20 +586,18 @@ def main():
     root.after(100, check_loading_queue)
     root.mainloop()
 
-def start_main_application(root, config, all_symbols_list, coingecko_mapping):
+def start_main_application(root, app_logic, all_symbols_list, coingecko_mapping):
     """Inicia a aplicação principal após o carregamento dos dados."""
     root.deiconify() # Mostra a janela principal
 
-    coin_manager = CoinManager()
-    
-    if not config.get("cryptos_to_monitor"):
-        config_dialog = StartupConfigDialog(root, all_symbols_list, config)
+    if not app_logic.config.get("cryptos_to_monitor"):
+        config_dialog = StartupConfigDialog(root, all_symbols_list, app_logic.config)
         root.wait_window(config_dialog)
         if not config_dialog.session_started:
             root.destroy()
             sys.exit("Configuração inicial cancelada.")
             
-    app = CryptoApp(root, config, all_symbols_list, coin_manager, coingecko_mapping)
+    app = CryptoApp(root, app_logic, all_symbols_list, coingecko_mapping)
     root.app = app  # Anexa a instância da aplicação à janela raiz
     root.protocol("WM_DELETE_WINDOW", app.on_closing)
 

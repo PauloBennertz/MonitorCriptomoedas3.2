@@ -1,3 +1,8 @@
+# Este arquivo conterá a lógica de negócios principal do aplicativo,
+# separada da interface do usuário (GUI).
+# O objetivo é tornar o código mais modular e reutilizável,
+# facilitando a adaptação para outras plataformas, como o Android.
+
 import requests
 import pandas as pd
 import time
@@ -9,10 +14,131 @@ import os
 from indicators import calculate_rsi, calculate_bollinger_bands, calculate_macd, calculate_emas, calculate_hilo_signals
 from notification_service import send_telegram_alert
 from pycoingecko import CoinGeckoAPI
-from app_state import load_coin_mapping_cache, save_coin_mapping_cache
-from core_components import ALERT_SUMMARIES
+from app_state import load_coin_mapping_cache, save_coin_mapping_cache, get_last_fetch_timestamp, update_last_fetch_timestamp
+from utils import get_application_path
+import json
+import sys
+
+class AppLogic:
+    def __init__(self, update_interval_hours=24):
+        self.config = self.load_config()
+        self.alert_history = self.load_alert_history()
+        self.coin_list_path = os.path.join(get_application_path(), "all_coins.json")
+        self.update_interval = timedelta(hours=update_interval_hours)
+        self.cg = CoinGeckoAPI()
+        self.all_coins = self._load_or_fetch_coins()
+
+    def _fetch_coins_from_api(self):
+        """Fetches the complete list of coins from the CoinGecko API."""
+        logging.info("Fetching coin list from CoinGecko API...")
+        try:
+            coins = self.cg.get_coins_list()
+            with open(self.coin_list_path, 'w', encoding='utf-8') as f:
+                json.dump(coins, f, indent=2)
+            logging.info(f"Successfully fetched and saved {len(coins)} coins.")
+            return coins
+        except Exception as e:
+            logging.error(f"Failed to fetch coin list from CoinGecko: {e}")
+            return None
+
+    def _load_or_fetch_coins(self):
+        """Loads the coin list from the local cache or fetches it if outdated or non-existent."""
+        if os.path.exists(self.coin_list_path):
+            file_mod_time = datetime.fromtimestamp(os.path.getmtime(self.coin_list_path))
+            if datetime.now() - file_mod_time < self.update_interval:
+                logging.info("Loading coin list from local cache.")
+                with open(self.coin_list_path, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+
+        return self._fetch_coins_from_api()
+
+    def get_all_coins(self):
+        """Returns the list of all coins."""
+        return self.all_coins
+
+    def get_coin_display_list(self):
+        """Returns a list of formatted strings for display (e.g., 'Bitcoin (BTC)')."""
+        if not self.all_coins:
+            return []
+
+        # Sort by name for user-friendly display
+        sorted_coins = sorted(self.all_coins, key=lambda x: x['name'])
+
+        return [f"{coin['name']} ({coin['symbol'].upper()})" for coin in sorted_coins]
+
+    def get_symbol_from_display_name(self, display_name):
+        """Extracts the symbol from the display name format."""
+        try:
+            return display_name.split('(')[-1].replace(')', '').strip()
+        except:
+            return None
+
+    def load_alert_history(self):
+        """Carrega o histórico de alertas do arquivo alert_history.json."""
+        history_path = os.path.join(get_application_path(), "alert_history.json")
+        try:
+            with open(history_path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            return []
+
+    def save_alert_history(self):
+        """Salva o histórico de alertas atual no arquivo alert_history.json."""
+        history_path = os.path.join(get_application_path(), "alert_history.json")
+        try:
+            with open(history_path, 'w', encoding='utf-8') as f:
+                json.dump(self.alert_history, f, indent=2)
+            logging.info("Histórico de alertas salvo com sucesso.")
+        except Exception as e:
+            logging.error(f"Não foi possível salvar o histórico de alertas: {e}")
+
+    def log_and_save_alert(self, symbol, trigger, data):
+        """Adiciona uma nova entrada de alerta ao histórico."""
+        alert_entry = {'timestamp': datetime.now().isoformat(), 'symbol': symbol, 'trigger': trigger, 'data': data}
+        self.alert_history.insert(0, alert_entry)
+        if len(self.alert_history) > 200:
+            self.alert_history = self.alert_history[:200]
+
+    def load_config(self):
+        """Carrega a configuração do aplicativo a partir do arquivo config.json."""
+        config_path = os.path.join(get_application_path(), "config.json")
+        try:
+            with open(config_path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            return {"cryptos_to_monitor": [], "telegram_bot_token": "", "telegram_chat_id": "", "check_interval_seconds": 300}
+
+    def save_config(self):
+        """Salva a configuração atual no arquivo config.json."""
+        config_path = os.path.join(get_application_path(), "config.json")
+        try:
+            with open(config_path, 'w', encoding='utf-8') as f:
+                json.dump(self.config, f, indent=2)
+            logging.info("Configurações salvas com sucesso.")
+        except Exception as e:
+            logging.error(f"Erro ao salvar configurações: {e}")
 
 cg_client = CoinGeckoAPI()
+
+ALERT_SUMMARIES = {
+    # RSI
+    'RSI_SOBRECOMPRA': "RSI > 70: Ativo pode estar supervalorizado, risco de correção.",
+    'RSI_SOBREVENDA': "RSI < 30: Ativo pode estar desvalorizado, potencial de alta.",
+    # Bandas de Bollinger
+    'PRECO_ACIMA_BANDA_SUPERIOR': "Preço acima da Banda de Bollinger Superior: Alta volatilidade, possível sobrecompra.",
+    'PRECO_ABAIXO_BANDA_INFERIOR': "Preço abaixo da Banda de Bollinger Inferior: Alta volatilidade, possível sobrevenda.",
+    # MACD
+    'CRUZAMENTO_MACD_ALTA': "MACD cruzou para cima da linha de sinal: Sinal de momentum de alta.",
+    'CRUZAMENTO_MACD_BAIXA': "MACD cruzou para baixo da linha de sinal: Sinal de momentum de baixa.",
+    # Médias Móveis
+    'CRUZ_DOURADA': "MME 50 cruzou acima da MME 200: Forte sinal de tendência de alta.",
+    'CRUZ_DA_MORTE': "MME 50 cruzou abaixo da MME 200: Forte sinal de tendência de baixa.",
+    # Padrão de Volume
+    'VOLUME_ANORMAL': "Volume de negociação significativamente acima da média. Indica forte interesse ou evento.",
+    # Padrão de Velas (Exemplo)
+    'MARTELO_ALTA': "Padrão de vela 'Martelo': Pode indicar uma reversão de baixa para alta.",
+    'ESTRELA_CADENTE_BAIXA': "Padrão de vela 'Estrela Cadente': Pode indicar uma reversão de alta para baixa."
+}
 
 def get_klines_data(symbol, interval='1h', limit=300):
     """Busca dados de k-lines da Binance com cache, rate limiting e validação."""
@@ -368,6 +494,35 @@ def run_single_symbol_update(symbol, config, data_queue, coingecko_mapping):
     analysis_data = _analyze_symbol(symbol, ticker_data, market_caps_data.get(symbol))
     data_queue.put({'type': 'data', 'payload': analysis_data})
     logging.info(f"Atualização para {symbol} enviada para a interface.")
+
+def fetch_initial_data(config, data_queue):
+    """Busca todos os dados iniciais necessários para a aplicação em uma thread separada."""
+    try:
+        last_fetch_time = get_last_fetch_timestamp()
+        current_time = time.time()
+
+        # Se a última busca foi a menos de 5 minutos (300s), pula a busca
+        if current_time - last_fetch_time < 300:
+            data_queue.put({'status': 'skipped', 'data': "Busca de dados recentes. Usando cache."})
+            # Mesmo pulando, precisamos dos dados para iniciar a app. Assumimos que estão em cache.
+            # Esta parte pode precisar de mais robustez se o cache puder estar vazio.
+            all_symbols = fetch_all_binance_symbols_startup(config) # Pode vir do cache da exchangeInfo
+            mapping = get_coingecko_global_mapping() # Pode vir do cache da lista de moedas
+            data_queue.put({'status': 'done', 'data': {'symbols': all_symbols, 'mapping': mapping}})
+            return
+
+        data_queue.put({'status': 'symbols', 'data': None})
+        all_symbols = fetch_all_binance_symbols_startup(config)
+
+        data_queue.put({'status': 'mapping', 'data': None})
+        mapping = get_coingecko_global_mapping()
+
+        update_last_fetch_timestamp() # Atualiza o timestamp após uma busca bem sucedida
+
+        data_queue.put({'status': 'done', 'data': {'symbols': all_symbols, 'mapping': mapping}})
+    except Exception as e:
+        logging.critical(f"Erro crítico ao buscar dados iniciais: {e}")
+        data_queue.put({'status': 'error', 'data': str(e)})
 
 def get_btc_dominance():
     """Busca a dominância de mercado do BTC a partir da CoinGecko."""

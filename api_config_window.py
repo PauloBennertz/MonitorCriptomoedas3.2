@@ -82,7 +82,7 @@ class ApiConfigWindow(ttkb.Toplevel):
         self.parent_app.config['telegram_bot_token'] = self.telegram_token_var.get()
         self.parent_app.config['telegram_chat_id'] = self.telegram_chat_id_var.get()
         
-        self.parent_app.save_config() # Chama o método save_config do MainApplication
+        self.parent_app.app_logic.save_config()
         
         messagebox.showinfo("Sucesso", "Configurações salvas com sucesso!", parent=self)
         self.destroy()
