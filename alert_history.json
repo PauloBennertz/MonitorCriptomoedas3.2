@@ -1,5 +1,77 @@
 [
   {
+    "timestamp": "2025-08-22T09:46:55.833516",
+    "symbol": "ETHUSDT",
+    "trigger": "PRECO_ACIMA",
+    "data": {
+      "symbol": "ETHUSDT",
+      "current_price": 4248.04,
+      "price_change_24h": -0.313,
+      "volume_24h": 2277223501.397805,
+      "rsi_value": 48.82315656032102,
+      "rsi_signal": "48.82",
+      "bollinger_signal": "Nenhum",
+      "macd_signal": "Cruzamento de Baixa",
+      "mme_cross": "Nenhum",
+      "hilo_signal": "HiLo Sell",
+      "market_cap": 67547
+    }
+  },
+  {
+    "timestamp": "2025-08-22T09:46:55.012318",
+    "symbol": "BTCUSDT",
+    "trigger": "CRUZAMENTO_MACD_BAIXA",
+    "data": {
+      "symbol": "BTCUSDT",
+      "current_price": 112455.79,
+      "price_change_24h": -0.552,
+      "volume_24h": 1386281817.4876764,
+      "rsi_value": 48.759625481274185,
+      "rsi_signal": "48.76",
+      "bollinger_signal": "Nenhum",
+      "macd_signal": "Cruzamento de Baixa",
+      "mme_cross": "Nenhum",
+      "hilo_signal": "Nenhum",
+      "market_cap": 12644102
+    }
+  },
+  {
+    "timestamp": "2025-08-22T09:43:17.787569",
+    "symbol": "ETHUSDT",
+    "trigger": "PRECO_ACIMA",
+    "data": {
+      "symbol": "ETHUSDT",
+      "current_price": 4237.71,
+      "price_change_24h": -0.932,
+      "volume_24h": 2260971324.170586,
+      "rsi_value": 46.944579879733475,
+      "rsi_signal": "46.94",
+      "bollinger_signal": "Nenhum",
+      "macd_signal": "Cruzamento de Baixa",
+      "mme_cross": "Nenhum",
+      "hilo_signal": "HiLo Sell",
+      "market_cap": 67530
+    }
+  },
+  {
+    "timestamp": "2025-08-22T09:43:16.977803",
+    "symbol": "BTCUSDT",
+    "trigger": "CRUZAMENTO_MACD_BAIXA",
+    "data": {
+      "symbol": "BTCUSDT",
+      "current_price": 112189.88,
+      "price_change_24h": -0.884,
+      "volume_24h": 1373524528.9342625,
+      "rsi_value": 44.70932202141607,
+      "rsi_signal": "44.71",
+      "bollinger_signal": "Nenhum",
+      "macd_signal": "Cruzamento de Baixa",
+      "mme_cross": "Nenhum",
+      "hilo_signal": "Nenhum",
+      "market_cap": 12651773
+    }
+  },
+  {
     "timestamp": "2025-08-22T03:17:04.242076",
     "symbol": "ETHUSDT",
     "trigger": "PRECO_ACIMA",
