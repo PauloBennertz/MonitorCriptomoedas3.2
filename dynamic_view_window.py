@@ -56,21 +56,24 @@ class DynamicViewWindow(ttkb.Toplevel):
         status_frame.pack(side=RIGHT, padx=10)
 
         self.status_label = ttkb.Label(status_frame, text="SYNCING...", font=("Consolas", 10), bootstyle="secondary")
-        self.status_label.pack(side=RIGHT, padx=10)
+        self.status_label.pack(side=RIGHT, padx=10, pady=(5,0))
 
-        self.status_meter = ttkb.Meter(
-            status_frame, metersize=20, radius=10, metertype='semi',
-            arcrange=359, arcoffset=180, amounttotal=60, amountused=0,
-            bootstyle='info', subtext='', interactive=False
+        self.status_progressbar = ttkb.Progressbar(
+            status_frame,
+            orient=HORIZONTAL,
+            length=100,
+            mode='determinate',
+            maximum=60,
+            bootstyle='info-striped'
         )
-        self.status_meter.pack(side=RIGHT)
+        self.status_progressbar.pack(side=RIGHT)
+
 
         self.tree = ttkb.Treeview(
             self.main_frame,
             columns=("rank", "coin", "price", "change_24h", "volume_24h", "market_cap"),
             show="headings", style='Futuristic.Treeview'
         )
-        # ... (headings and columns setup)
         self.tree.heading("rank", text="#")
         self.tree.heading("coin", text="MOEDA")
         self.tree.heading("price", text="PREÇO (USD)")
@@ -95,7 +98,7 @@ class DynamicViewWindow(ttkb.Toplevel):
         self.tree.tag_configure('positive', foreground=self.positive_color)
         self.tree.tag_configure('negative', foreground=self.negative_color)
 
-        self.error_label = ttkb.Label(self.main_frame, text="", font=("Consolas", 14, "bold"), bootstyle="danger")
+        self.error_label = ttkb.Label(self.main_frame, text="", font=("Consolas", 14, "bold"), bootstyle="danger", anchor=CENTER)
 
 
     def load_data(self):
@@ -107,9 +110,12 @@ class DynamicViewWindow(ttkb.Toplevel):
             self.after(0, self._populate_tree, None)
 
     def _populate_tree(self, data):
-        self.error_label.pack_forget()
-        self.tree.pack(side=LEFT, expand=True, fill=BOTH)
-        self.tree_scrollbar.pack(side=RIGHT, fill=Y)
+        if self.error_label.winfo_ismapped():
+            self.error_label.pack_forget()
+
+        if not self.tree.winfo_ismapped():
+            self.tree.pack(side=LEFT, expand=True, fill=BOTH)
+            self.tree_scrollbar.pack(side=RIGHT, fill=Y)
 
         selected_item = self.tree.selection()
         scroll_pos = self.tree.yview()
@@ -120,7 +126,7 @@ class DynamicViewWindow(ttkb.Toplevel):
             self.tree.pack_forget()
             self.tree_scrollbar.pack_forget()
             self.error_label.config(text="ERRO DE API: Não foi possível carregar os dados.\nVerifique a conexão ou tente novamente mais tarde.")
-            self.error_label.pack(expand=True, fill=BOTH)
+            self.error_label.pack(expand=True, fill=BOTH, padx=20, pady=20)
             self._update_status("API Error")
             return
 
@@ -163,10 +169,11 @@ class DynamicViewWindow(ttkb.Toplevel):
         while self.running:
             for i in range(60):
                 if not self.running: break
-                self.after(0, self.status_meter.configure, {'amountused': 60 - i})
+                self.after(0, self.status_progressbar.config, {'value': 60 - i})
                 time.sleep(1)
 
             if self.running:
+                self.after(0, self.status_progressbar.config, {'value': 0})
                 threading.Thread(target=self.load_data, daemon=True).start()
 
     def on_closing(self):
