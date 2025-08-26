@@ -395,3 +395,13 @@ def get_btc_dominance():
     except Exception as e:
         logging.error(f"Não foi possível buscar a dominância do BTC: {e}")
         return "Erro"
+
+def get_top_100_coins():
+    """Busca as 100 principais criptomoedas por capitalização de mercado da CoinGecko."""
+    try:
+        robust_services.rate_limiter.wait_if_needed()
+        coins = cg_client.get_coins_markets(vs_currency='usd', order='market_cap_desc', per_page=100, page=1)
+        return coins
+    except Exception as e:
+        logging.error(f"Erro ao buscar as 100 principais moedas da CoinGecko: {e}")
+        return []
