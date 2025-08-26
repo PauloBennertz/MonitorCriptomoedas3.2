@@ -2,15 +2,15 @@ import tkinter as tk
 from tkinter import ttk
 import ttkbootstrap as ttkb
 from ttkbootstrap.constants import *
-from monitoring_service import get_top_100_coins
+from monitoring_service import get_top_coins
 import threading
 import time
 
 class DynamicViewWindow(ttkb.Toplevel):
     def __init__(self, parent):
         super().__init__(parent)
-        self.title("Visão Dinâmica de Criptomoedas")
-        self.geometry("1300x750")
+        self.title("Top 20 Criptomoedas - Visão Analítica")
+        self.geometry("1600x750") # Aumentar a largura da janela
 
         self.parent = parent
         self.running = True
@@ -49,7 +49,7 @@ class DynamicViewWindow(ttkb.Toplevel):
         header_frame = ttkb.Frame(self.main_frame)
         header_frame.pack(fill=X, pady=(0, 20))
 
-        header = ttkb.Label(header_frame, text="[ DYNAMIC MARKET OVERVIEW ]", font=("Consolas", 18, "bold"), bootstyle="info")
+        header = ttkb.Label(header_frame, text="[ TOP 20 MARKET OVERVIEW - ANALYTICAL ]", font=("Consolas", 18, "bold"), bootstyle="info")
         header.pack(side=LEFT)
 
         status_frame = ttkb.Frame(header_frame)
@@ -59,35 +59,35 @@ class DynamicViewWindow(ttkb.Toplevel):
         self.status_label.pack(side=RIGHT, padx=10, pady=(5,0))
 
         self.status_progressbar = ttkb.Progressbar(
-            status_frame,
-            orient=HORIZONTAL,
-            length=100,
-            mode='determinate',
-            maximum=60,
-            bootstyle='info-striped'
+            status_frame, orient=HORIZONTAL, length=100, mode='determinate',
+            maximum=60, bootstyle='info-striped'
         )
         self.status_progressbar.pack(side=RIGHT)
 
+        columns = ("rank", "coin", "price", "change_24h", "high_24h", "low_24h", "ath", "ath_change", "volume_24h", "market_cap")
+        self.tree = ttkb.Treeview(self.main_frame, columns=columns, show="headings", style='Futuristic.Treeview')
 
-        self.tree = ttkb.Treeview(
-            self.main_frame,
-            columns=("rank", "coin", "price", "change_24h", "volume_24h", "market_cap"),
-            show="headings", style='Futuristic.Treeview'
-        )
         self.tree.heading("rank", text="#")
         self.tree.heading("coin", text="MOEDA")
         self.tree.heading("price", text="PREÇO (USD)")
         self.tree.heading("change_24h", text="VARIAÇÃO (24H)")
+        self.tree.heading("high_24h", text="MÁXIMA (24H)")
+        self.tree.heading("low_24h", text="MÍNIMA (24H)")
+        self.tree.heading("ath", text="ATH (USD)")
+        self.tree.heading("ath_change", text="% DO ATH")
         self.tree.heading("volume_24h", text="VOLUME (24H)")
         self.tree.heading("market_cap", text="CAP. DE MERCADO")
 
-        self.tree.column("rank", width=50, anchor=CENTER)
-        self.tree.column("coin", width=220, anchor=W)
-        self.tree.column("price", width=160, anchor=E)
-        self.tree.column("change_24h", width=160, anchor=E)
-        self.tree.column("volume_24h", width=200, anchor=E)
-        self.tree.column("market_cap", width=250, anchor=E)
-
+        self.tree.column("rank", width=40, anchor=CENTER)
+        self.tree.column("coin", width=200, anchor=W)
+        self.tree.column("price", width=140, anchor=E)
+        self.tree.column("change_24h", width=140, anchor=E)
+        self.tree.column("high_24h", width=140, anchor=E)
+        self.tree.column("low_24h", width=140, anchor=E)
+        self.tree.column("ath", width=140, anchor=E)
+        self.tree.column("ath_change", width=120, anchor=E)
+        self.tree.column("volume_24h", width=180, anchor=E)
+        self.tree.column("market_cap", width=200, anchor=E)
 
         self.tree_scrollbar = ttkb.Scrollbar(self.main_frame, orient=VERTICAL, command=self.tree.yview, bootstyle="round-info")
         self.tree.configure(yscrollcommand=self.tree_scrollbar.set)
@@ -100,19 +100,16 @@ class DynamicViewWindow(ttkb.Toplevel):
 
         self.error_label = ttkb.Label(self.main_frame, text="", font=("Consolas", 14, "bold"), bootstyle="danger", anchor=CENTER)
 
-
     def load_data(self):
         self.after(0, self._update_status, "SYNCING...")
         try:
-            data = get_top_100_coins()
+            data = get_top_coins(20)
             self.after(0, self._populate_tree, data)
         except Exception as e:
             self.after(0, self._populate_tree, None)
 
     def _populate_tree(self, data):
-        if self.error_label.winfo_ismapped():
-            self.error_label.pack_forget()
-
+        if self.error_label.winfo_ismapped(): self.error_label.pack_forget()
         if not self.tree.winfo_ismapped():
             self.tree.pack(side=LEFT, expand=True, fill=BOTH)
             self.tree_scrollbar.pack(side=RIGHT, fill=Y)
@@ -131,25 +128,34 @@ class DynamicViewWindow(ttkb.Toplevel):
             return
 
         if not data:
-             self.tree.insert("", END, values=("", "Nenhum dado retornado pela API.", "", "", "", ""))
+             self.tree.insert("", END, values=("", "Nenhum dado retornado pela API.", "", "", "", "", "", "", "", ""))
              self._update_status("Dados não disponíveis")
              return
 
         for i, coin in enumerate(data):
+            # Extração dos dados
             rank = coin.get('market_cap_rank', 'N/A')
             name = f"{coin.get('name', '???')} ({coin.get('symbol', 'N/A').upper()})"
             price = f"${coin.get('current_price', 0):,.4f}"
             change_24h = coin.get('price_change_percentage_24h', 0)
-            change_24h_str = f"{change_24h:+.2f}%" if change_24h is not None else "N/A"
+            high_24h = f"${coin.get('high_24h', 0):,.4f}"
+            low_24h = f"${coin.get('low_24h', 0):,.4f}"
+            ath = f"${coin.get('ath', 0):,.4f}"
+            ath_change = coin.get('ath_change_percentage', 0)
             volume_24h = f"${coin.get('total_volume', 0):,}"
             market_cap = f"${coin.get('market_cap', 0):,}"
 
+            # Formatação
+            change_24h_str = f"{change_24h:+.2f}%" if change_24h is not None else "N/A"
+            ath_change_str = f"{ath_change:+.2f}%" if ath_change is not None else "N/A"
+
+            # Tag de cor
             tag = ''
             if change_24h is not None:
                 if change_24h > 0: tag = 'positive'
                 elif change_24h < 0: tag = 'negative'
 
-            values = (rank, name, price, change_24h_str, volume_24h, market_cap)
+            values = (rank, name, price, change_24h_str, high_24h, low_24h, ath, ath_change_str, volume_24h, market_cap)
             self.tree.insert("", END, values=values, iid=i, tags=(tag,))
 
         if selected_item: self.tree.selection_set(selected_item)
