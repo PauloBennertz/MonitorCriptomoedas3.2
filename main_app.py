@@ -35,7 +35,7 @@ from help_window import HelpWindow
 from app_state import get_last_fetch_timestamp, update_last_fetch_timestamp
 from update_checker import check_for_updates
 
-APP_VERSION = "3.1"
+APP_VERSION = "3.2"
 
 try:
     from PIL import Image, ImageTk
