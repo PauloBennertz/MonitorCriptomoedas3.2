@@ -13,6 +13,7 @@ def build_exe():
         '--onefile',  # Arquivo único
         '--windowed',  # Sem console
         '--name=MonitorCriptomoedas',
+        '--add-data=version.txt;.', # Incluir o arquivo de versão
         '--add-data=icons;icons',  # Incluir pasta de ícones
         '--add-data=sons;sons',    # Incluir pasta de sons
         '--add-data=config.json;.',  # Incluir arquivo de configuração

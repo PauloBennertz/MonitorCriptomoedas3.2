@@ -36,7 +36,24 @@ from help_window import HelpWindow
 from app_state import get_last_fetch_timestamp, update_last_fetch_timestamp
 from update_checker import check_for_updates
 
-APP_VERSION = "3.2"
+def get_app_version():
+    """Lê a versão de um arquivo version.txt, com fallback."""
+    try:
+        # Usamos get_application_path para funcionar tanto em dev quanto no .exe
+        version_path = os.path.join(get_application_path(), 'version.txt')
+        with open(version_path, 'r') as f:
+            version = f.read().strip()
+            # Retorna a versão lida se não for uma string vazia, senão o fallback.
+            return version if version else "3.2"
+    except FileNotFoundError:
+        # Fallback para ambientes onde o arquivo pode não existir (ex: dev sem o arquivo)
+        return "3.2"
+    except Exception as e:
+        # Logar outros erros potenciais pode ser útil
+        print(f"Erro ao ler o arquivo de versão: {e}")
+        return "3.2"
+
+APP_VERSION = get_app_version()
 
 try:
     from PIL import Image, ImageTk
