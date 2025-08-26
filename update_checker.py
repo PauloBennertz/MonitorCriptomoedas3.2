@@ -256,6 +256,7 @@ start "" "{current_exe_path}"
 
 def launch_updater_and_exit(root):
     """ Cria e executa o script de atualização, depois fecha a aplicação. """
+
     messagebox.showinfo("Atualização Concluída", "Download concluido, o programa sera reiniciado.")
 
     try:
