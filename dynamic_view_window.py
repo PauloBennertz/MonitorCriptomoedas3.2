@@ -18,7 +18,6 @@ class DynamicViewWindow(ttkb.Toplevel):
         self.configure_styles()
         self.create_widgets()
 
-        # Iniciar o carregamento de dados em uma thread para não bloquear a UI
         threading.Thread(target=self.load_data, daemon=True).start()
         self.start_auto_refresh()
 
@@ -26,19 +25,16 @@ class DynamicViewWindow(ttkb.Toplevel):
 
     def configure_styles(self):
         style = ttkb.Style.get_instance()
-        # Usando o tema 'cyborg' que é escuro e já tem um apelo tecnológico
         style.theme_use('cyborg')
 
-        # Fontes
         self.data_font = ("Consolas", 11)
         self.header_font = ("Consolas", 12, "bold")
 
         style.configure('Futuristic.Treeview', rowheight=28, font=self.data_font)
         style.configure('Futuristic.Treeview.Heading', font=self.header_font)
 
-        # Cores "neon"
-        self.positive_color = "#00FFFF"  # Ciano
-        self.negative_color = "#FF00FF"  # Magenta
+        self.positive_color = "#00FFFF"
+        self.negative_color = "#FF00FF"
 
         style.map('Futuristic.Treeview',
                   background=[('selected', '#004040')],
@@ -47,10 +43,10 @@ class DynamicViewWindow(ttkb.Toplevel):
         self.tree_style = style
 
     def create_widgets(self):
-        main_frame = ttkb.Frame(self, padding=15)
-        main_frame.pack(expand=True, fill=BOTH)
+        self.main_frame = ttkb.Frame(self, padding=15)
+        self.main_frame.pack(expand=True, fill=BOTH)
 
-        header_frame = ttkb.Frame(main_frame)
+        header_frame = ttkb.Frame(self.main_frame)
         header_frame.pack(fill=X, pady=(0, 20))
 
         header = ttkb.Label(header_frame, text="[ DYNAMIC MARKET OVERVIEW ]", font=("Consolas", 18, "bold"), bootstyle="info")
@@ -63,27 +59,18 @@ class DynamicViewWindow(ttkb.Toplevel):
         self.status_label.pack(side=RIGHT, padx=10)
 
         self.status_meter = ttkb.Meter(
-            status_frame,
-            metersize=20,
-            radius=10,
-            metertype='semi',
-            arcrange=359,
-            arcoffset=180,
-            amounttotal=60,
-            amountused=0,
-            bootstyle='info',
-            subtext='',
-            interactive=False
+            status_frame, metersize=20, radius=10, metertype='semi',
+            arcrange=359, arcoffset=180, amounttotal=60, amountused=0,
+            bootstyle='info', subtext='', interactive=False
         )
         self.status_meter.pack(side=RIGHT)
 
         self.tree = ttkb.Treeview(
-            main_frame,
+            self.main_frame,
             columns=("rank", "coin", "price", "change_24h", "volume_24h", "market_cap"),
-            show="headings",
-            style='Futuristic.Treeview'
+            show="headings", style='Futuristic.Treeview'
         )
-
+        # ... (headings and columns setup)
         self.tree.heading("rank", text="#")
         self.tree.heading("coin", text="MOEDA")
         self.tree.heading("price", text="PREÇO (USD)")
@@ -98,32 +85,49 @@ class DynamicViewWindow(ttkb.Toplevel):
         self.tree.column("volume_24h", width=200, anchor=E)
         self.tree.column("market_cap", width=250, anchor=E)
 
-        scrollbar = ttkb.Scrollbar(main_frame, orient=VERTICAL, command=self.tree.yview, bootstyle="round-info")
-        self.tree.configure(yscrollcommand=scrollbar.set)
+
+        self.tree_scrollbar = ttkb.Scrollbar(self.main_frame, orient=VERTICAL, command=self.tree.yview, bootstyle="round-info")
+        self.tree.configure(yscrollcommand=self.tree_scrollbar.set)
 
         self.tree.pack(side=LEFT, expand=True, fill=BOTH)
-        scrollbar.pack(side=RIGHT, fill=Y)
+        self.tree_scrollbar.pack(side=RIGHT, fill=Y)
 
         self.tree.tag_configure('positive', foreground=self.positive_color)
         self.tree.tag_configure('negative', foreground=self.negative_color)
 
+        self.error_label = ttkb.Label(self.main_frame, text="", font=("Consolas", 14, "bold"), bootstyle="danger")
+
+
     def load_data(self):
         self.after(0, self._update_status, "SYNCING...")
-        data = get_top_100_coins()
-        self.after(0, self._populate_tree, data)
-
-        timestamp = time.strftime('%H:%M:%S')
-        self.after(0, self._update_status, f"LAST SYNC: {timestamp}")
+        try:
+            data = get_top_100_coins()
+            self.after(0, self._populate_tree, data)
+        except Exception as e:
+            self.after(0, self._populate_tree, None)
 
     def _populate_tree(self, data):
+        self.error_label.pack_forget()
+        self.tree.pack(side=LEFT, expand=True, fill=BOTH)
+        self.tree_scrollbar.pack(side=RIGHT, fill=Y)
+
         selected_item = self.tree.selection()
         scroll_pos = self.tree.yview()
 
         self.tree.delete(*self.tree.get_children())
 
-        if not data:
-            self.tree.insert("", END, values=("", "Falha na sincronização com a API.", "", "", "", ""))
+        if data is None:
+            self.tree.pack_forget()
+            self.tree_scrollbar.pack_forget()
+            self.error_label.config(text="ERRO DE API: Não foi possível carregar os dados.\nVerifique a conexão ou tente novamente mais tarde.")
+            self.error_label.pack(expand=True, fill=BOTH)
+            self._update_status("API Error")
             return
+
+        if not data:
+             self.tree.insert("", END, values=("", "Nenhum dado retornado pela API.", "", "", "", ""))
+             self._update_status("Dados não disponíveis")
+             return
 
         for i, coin in enumerate(data):
             rank = coin.get('market_cap_rank', 'N/A')
@@ -144,6 +148,9 @@ class DynamicViewWindow(ttkb.Toplevel):
 
         if selected_item: self.tree.selection_set(selected_item)
         self.tree.yview_moveto(scroll_pos[0])
+
+        timestamp = time.strftime('%H:%M:%S')
+        self._update_status(f"LAST SYNC: {timestamp}")
 
     def _update_status(self, message):
         self.status_label.config(text=message)
@@ -167,7 +174,6 @@ class DynamicViewWindow(ttkb.Toplevel):
         self.destroy()
 
 if __name__ == '__main__':
-    # Usar o tema 'cyborg' para o teste local
     app = ttkb.Window(themename="cyborg")
     dynamic_window = DynamicViewWindow(app)
     app.mainloop()

@@ -404,4 +404,4 @@ def get_top_100_coins():
         return coins
     except Exception as e:
         logging.error(f"Erro ao buscar as 100 principais moedas da CoinGecko: {e}")
-        return []
+        return None
