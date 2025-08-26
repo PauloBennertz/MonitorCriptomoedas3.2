@@ -423,8 +423,8 @@ class CryptoApp:
         HelpWindow(self)
 
     def check_for_updates_manual(self):
-        """Verifica manualmente se há atualizações."""
-        check_for_updates(self.root, self.version, on_startup=False)
+        """Verifica manualmente se há atualizações, com feedback para o usuário."""
+        check_for_updates(self.root, self.version, manual_check=True)
 
     def send_feedback(self):
         """Abre o cliente de e-mail padrão para enviar feedback."""

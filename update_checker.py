@@ -111,22 +111,28 @@ class DownloadProgressWindow(tk.Toplevel):
 
 # --- Lógica de Atualização ---
 
-def check_for_updates(root, current_version, on_startup=False):
+def check_for_updates(root, current_version, on_startup=False, manual_check=False):
     """ Verifica atualizações. Se on_startup for True, força a atualização se a flag estiver ativa. """
-    if on_startup:
+    # Lógica para atualização automática na inicialização
+    if on_startup and not manual_check:
         config_path = _get_config_path()
         if os.path.exists(config_path):
-            with open(config_path, 'r') as f:
-                config = json.load(f)
-            if config.get('update_on_startup'):
-                print("Flag 'update_on_startup' encontrada. Tentando atualizar...")
-                threading.Thread(target=_perform_check, args=(root, current_version, True), daemon=True).start()
-                return # Impede a verificação dupla
+            try:
+                with open(config_path, 'r') as f:
+                    config = json.load(f)
+                if config.get('update_on_startup'):
+                    print("Flag 'update_on_startup' encontrada. Tentando atualizar...")
+                    # Força a atualização sem ser um 'manual_check'
+                    threading.Thread(target=_perform_check, args=(root, current_version, True, False), daemon=True).start()
+                    return  # Impede a verificação dupla
+            except (json.JSONDecodeError, IOError) as e:
+                print(f"Erro ao ler o arquivo de configuração durante a verificação de atualização: {e}")
 
-    threading.Thread(target=_perform_check, args=(root, current_version, False), daemon=True).start()
+    # Para verificações manuais ou a verificação silenciosa padrão na inicialização
+    threading.Thread(target=_perform_check, args=(root, current_version, False, manual_check), daemon=True).start()
 
-def _perform_check(root, current_version, force_update=False):
-    """ Realiza a chamada à API e compara as versões. """
+def _perform_check(root, current_version, force_update=False, manual_check=False):
+    """ Realiza a chamada à API, compara as versões e notifica o usuário conforme necessário. """
     try:
         response = requests.get(GITHUB_API_URL, timeout=15)
         response.raise_for_status()
@@ -134,16 +140,38 @@ def _perform_check(root, current_version, force_update=False):
         tag_name = latest_release.get("tag_name", "0.0.0")
         latest_version_str = tag_name.lstrip('v')
 
-        if force_update or parse_version(latest_version_str) > parse_version(current_version):
+        is_newer_version = parse_version(latest_version_str) > parse_version(current_version)
+
+        if force_update or is_newer_version:
             assets = latest_release.get("assets", [])
-            if force_update:
-                root.after(0, download_and_install, root, assets)
-                _set_update_on_startup_flag(False) # Reseta a flag
-            else:
-                release_notes = latest_release.get("body", "")
-                root.after(0, show_update_notification, root, latest_version_str, release_notes, assets)
+            release_notes = latest_release.get("body", "Nenhuma nota de versão encontrada.")
+
+            # A notificação só deve aparecer se não for uma atualização forçada (que é silenciosa até o download)
+            if not force_update:
+                 root.after(0, show_update_notification, root, latest_version_str, release_notes, assets)
+            else: # Se for forçada, vai direto para o download
+                 root.after(0, download_and_install, root, assets)
+                 _set_update_on_startup_flag(False) # Reseta a flag
+
+        elif manual_check:
+            # Se a verificação foi manual e não há novas versões, informa o usuário.
+            root.after(0, lambda: messagebox.showinfo(
+                "Tudo Certo!",
+                f"Você já está com a versão mais recente do aplicativo (v{current_version})."
+            ))
+
+    except requests.exceptions.RequestException as e:
+        # Erros de conexão ou timeout
+        error_message = f"Não foi possível verificar as atualizações. Verifique sua conexão com a internet.\n\nDetalhes: {e}"
+        print(error_message)
+        if manual_check:
+            root.after(0, lambda: messagebox.showerror("Erro de Conexão", error_message))
     except Exception as e:
-        print(f"Erro ao verificar atualizações: {e}")
+        # Outros erros (ex: parsing do JSON, etc.)
+        error_message = f"Ocorreu um erro inesperado ao verificar atualizações: {e}"
+        print(error_message)
+        if manual_check:
+            root.after(0, lambda: messagebox.showerror("Erro de Atualização", error_message))
 
 def show_update_notification(root, version, notes, assets):
     """ Mostra a janela de notificação e processa a escolha do usuário. """
