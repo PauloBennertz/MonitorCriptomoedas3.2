@@ -78,7 +78,7 @@ class DownloadProgressWindow(tk.Toplevel):
     def __init__(self, parent):
         super().__init__(parent)
         self.title("Baixando Atualização...")
-        self.geometry("400x150")
+        self.geometry("500x200")
         self.transient(parent)
         self.grab_set()
         self.protocol("WM_DELETE_WINDOW", lambda: None) # Impede o fechamento
