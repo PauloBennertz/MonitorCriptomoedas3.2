@@ -1,7 +1,7 @@
 
 @echo off
 echo Aguardando o aplicativo fechar...
-taskkill /F /PID 23060 > nul 2>&1
+taskkill /F /PID 12704 > nul 2>&1
 timeout /t 2 /nobreak > nul
 
 echo Substituindo arquivos...

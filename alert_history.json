@@ -1,5 +1,239 @@
 [
   {
+    "timestamp": "2025-08-26T16:58:24.853722",
+    "symbol": "ETHUSDT",
+    "trigger": "PRECO_ACIMA",
+    "data": {
+      "symbol": "ETHUSDT",
+      "current_price": 4593.99,
+      "price_change_24h": 3.458,
+      "volume_24h": 4425298090.747576,
+      "rsi_value": 69.72696751259016,
+      "rsi_signal": "69.73",
+      "bollinger_signal": "Nenhum",
+      "macd_signal": "Nenhum",
+      "mme_cross": "Nenhum",
+      "hilo_signal": "Nenhum",
+      "market_cap": 72599
+    }
+  },
+  {
+    "timestamp": "2025-08-26T16:58:24.043153",
+    "symbol": "BTCUSDT",
+    "trigger": "PRECO_ACIMA_BANDA_SUPERIOR",
+    "data": {
+      "symbol": "BTCUSDT",
+      "current_price": 111155.78,
+      "price_change_24h": 0.329,
+      "volume_24h": 2556983867.5594616,
+      "rsi_value": 60.863797303293666,
+      "rsi_signal": "60.86",
+      "bollinger_signal": "Acima da Banda",
+      "macd_signal": "Nenhum",
+      "mme_cross": "Nenhum",
+      "hilo_signal": "HiLo Buy",
+      "market_cap": 12588303
+    }
+  },
+  {
+    "timestamp": "2025-08-26T16:08:37.766647",
+    "symbol": "ETHUSDT",
+    "trigger": "PRECO_ACIMA",
+    "data": {
+      "symbol": "ETHUSDT",
+      "current_price": 4532.42,
+      "price_change_24h": -0.833,
+      "volume_24h": 4509023133.1294,
+      "rsi_value": 63.57042644995631,
+      "rsi_signal": "63.57",
+      "bollinger_signal": "Nenhum",
+      "macd_signal": "Nenhum",
+      "mme_cross": "Nenhum",
+      "hilo_signal": "Nenhum",
+      "market_cap": 72167
+    }
+  },
+  {
+    "timestamp": "2025-08-26T16:04:20.525024",
+    "symbol": "ETHUSDT",
+    "trigger": "PRECO_ACIMA",
+    "data": {
+      "symbol": "ETHUSDT",
+      "current_price": 4543.93,
+      "price_change_24h": -0.525,
+      "volume_24h": 4511698272.436576,
+      "rsi_value": 65.45915446888552,
+      "rsi_signal": "65.46",
+      "bollinger_signal": "Nenhum",
+      "macd_signal": "Nenhum",
+      "mme_cross": "Nenhum",
+      "hilo_signal": "Nenhum",
+      "market_cap": 72409
+    }
+  },
+  {
+    "timestamp": "2025-08-26T10:45:49.481788",
+    "symbol": "SOLUSDT",
+    "trigger": "CRUZ_DA_MORTE",
+    "data": {
+      "symbol": "SOLUSDT",
+      "current_price": 189.35,
+      "price_change_24h": -3.55,
+      "volume_24h": 1125869211.87578,
+      "rsi_value": 57.99853907962018,
+      "rsi_signal": "58.00",
+      "bollinger_signal": "Nenhum",
+      "macd_signal": "Nenhum",
+      "mme_cross": "Cruz da Morte",
+      "hilo_signal": "Nenhum",
+      "market_cap": 0.0
+    }
+  },
+  {
+    "timestamp": "2025-08-26T10:45:48.470972",
+    "symbol": "ETHUSDT",
+    "trigger": "PRECO_ACIMA",
+    "data": {
+      "symbol": "ETHUSDT",
+      "current_price": 4483.96,
+      "price_change_24h": -2.757,
+      "volume_24h": 4281878684.043936,
+      "rsi_value": 65.0582316479972,
+      "rsi_signal": "65.06",
+      "bollinger_signal": "Nenhum",
+      "macd_signal": "Nenhum",
+      "mme_cross": "Nenhum",
+      "hilo_signal": "Nenhum",
+      "market_cap": 70470
+    }
+  },
+  {
+    "timestamp": "2025-08-26T10:32:09.188318",
+    "symbol": "SOLUSDT",
+    "trigger": "CRUZ_DA_MORTE",
+    "data": {
+      "symbol": "SOLUSDT",
+      "current_price": 190.93,
+      "price_change_24h": -2.943,
+      "volume_24h": 1113845058.2141,
+      "rsi_value": 64.58814472671298,
+      "rsi_signal": "64.59",
+      "bollinger_signal": "Nenhum",
+      "macd_signal": "Nenhum",
+      "mme_cross": "Cruz da Morte",
+      "hilo_signal": "Nenhum",
+      "market_cap": 0.0
+    }
+  },
+  {
+    "timestamp": "2025-08-26T10:32:07.493378",
+    "symbol": "ETHUSDT",
+    "trigger": "PRECO_ACIMA",
+    "data": {
+      "symbol": "ETHUSDT",
+      "current_price": 4518.07,
+      "price_change_24h": -2.425,
+      "volume_24h": 4284637825.389133,
+      "rsi_value": 69.28680147858222,
+      "rsi_signal": "69.29",
+      "bollinger_signal": "Nenhum",
+      "macd_signal": "Nenhum",
+      "mme_cross": "Nenhum",
+      "hilo_signal": "Nenhum",
+      "market_cap": 69918
+    }
+  },
+  {
+    "timestamp": "2025-08-26T10:32:05.457381",
+    "symbol": "ARBUSDT",
+    "trigger": "RSI_SOBRECOMPRA",
+    "data": {
+      "symbol": "ARBUSDT",
+      "current_price": 0.5367,
+      "price_change_24h": -1.306,
+      "volume_24h": 87511826.87429,
+      "rsi_value": 70.88607594936718,
+      "rsi_signal": "70.89",
+      "bollinger_signal": "Nenhum",
+      "macd_signal": "Nenhum",
+      "mme_cross": "Nenhum",
+      "hilo_signal": "Nenhum",
+      "market_cap": 87683
+    }
+  },
+  {
+    "timestamp": "2025-08-26T10:32:05.457040",
+    "symbol": "ARBUSDT",
+    "trigger": "PRECO_ABAIXO",
+    "data": {
+      "symbol": "ARBUSDT",
+      "current_price": 0.5367,
+      "price_change_24h": -1.306,
+      "volume_24h": 87511826.87429,
+      "rsi_value": 70.88607594936718,
+      "rsi_signal": "70.89",
+      "bollinger_signal": "Nenhum",
+      "macd_signal": "Nenhum",
+      "mme_cross": "Nenhum",
+      "hilo_signal": "Nenhum",
+      "market_cap": 87683
+    }
+  },
+  {
+    "timestamp": "2025-08-26T08:48:35.017919",
+    "symbol": "ETHUSDT",
+    "trigger": "PRECO_ACIMA",
+    "data": {
+      "symbol": "ETHUSDT",
+      "current_price": 4412.41,
+      "price_change_24h": -3.988,
+      "volume_24h": 4259042640.058021,
+      "rsi_value": 58.825381378974654,
+      "rsi_signal": "58.83",
+      "bollinger_signal": "Nenhum",
+      "macd_signal": "Nenhum",
+      "mme_cross": "Nenhum",
+      "hilo_signal": "Nenhum",
+      "market_cap": 69145
+    }
+  },
+  {
+    "timestamp": "2025-08-26T08:48:33.315113",
+    "symbol": "ARBUSDT",
+    "trigger": "FUGA_CAPITAL",
+    "data": {
+      "symbol": "ARBUSDT",
+      "current_price": 0.5242,
+      "price_change_24h": -3.834,
+      "volume_24h": 85188812.9822,
+      "rsi_value": 61.71079429735229,
+      "rsi_signal": "61.71",
+      "bollinger_signal": "Nenhum",
+      "macd_signal": "Nenhum",
+      "mme_cross": "Nenhum",
+      "hilo_signal": "Nenhum",
+      "market_cap": 86294
+    }
+  },
+  {
+    "timestamp": "2025-08-26T08:48:33.314790",
+    "symbol": "ARBUSDT",
+    "trigger": "PRECO_ABAIXO",
+    "data": {
+      "symbol": "ARBUSDT",
+      "current_price": 0.5242,
+      "price_change_24h": -3.834,
+      "volume_24h": 85188812.9822,
+      "rsi_value": 61.71079429735229,
+      "rsi_signal": "61.71",
+      "bollinger_signal": "Nenhum",
+      "macd_signal": "Nenhum",
+      "mme_cross": "Nenhum",
+      "hilo_signal": "Nenhum",
+      "market_cap": 86294
+    }
+  },
+  {
     "timestamp": "2025-08-22T09:46:55.833516",
     "symbol": "ETHUSDT",
     "trigger": "PRECO_ACIMA",

@@ -9,65 +9,6 @@
   },
   "cryptos_to_monitor": [
     {
-      "symbol": "ARBUSDT",
-      "alert_config": {
-        "notes": "ordem stop limite executada",
-        "sound": "sons\\ALERTA.wav",
-        "alert_cooldown_minutes": 15,
-        "conditions": {
-          "preco_baixo": {
-            "enabled": true,
-            "value": 0.54
-          },
-          "preco_alto": {
-            "enabled": false,
-            "value": 0.0
-          },
-          "rsi_sobrevendido": {
-            "enabled": true,
-            "value": 30.0
-          },
-          "rsi_sobrecomprado": {
-            "enabled": true,
-            "value": 70.0
-          },
-          "bollinger_abaixo": {
-            "enabled": true
-          },
-          "bollinger_acima": {
-            "enabled": true
-          },
-          "macd_cruz_baixa": {
-            "enabled": true
-          },
-          "macd_cruz_alta": {
-            "enabled": true
-          },
-          "mme_cruz_morte": {
-            "enabled": true
-          },
-          "mme_cruz_dourada": {
-            "enabled": true
-          },
-          "hilo_compra": {
-            "enabled": true
-          },
-          "hilo_venda": {
-            "enabled": true
-          },
-          "fuga_capital_significativa": {
-            "enabled": true,
-            "value": "0.5, -2.0"
-          },
-          "entrada_capital_significativa": {
-            "enabled": true,
-            "value": "0.3, 1.0"
-          }
-        },
-        "triggered_conditions": {}
-      }
-    },
-    {
       "symbol": "BTCUSDT",
       "alert_config": {
         "notes": "Monitorando para o pr\u00f3ximo ciclo.",
@@ -163,65 +104,6 @@
         "triggered_conditions": [
           "Pre\u00e7o Acima de $3500.00 (Atual: $3765.32)"
         ]
-      }
-    },
-    {
-      "symbol": "JUPUSDT",
-      "alert_config": {
-        "notes": "",
-        "sound": "sons/Alerta.mp3",
-        "alert_cooldown_minutes": 60,
-        "conditions": {
-          "preco_baixo": {
-            "enabled": false,
-            "value": 0.0
-          },
-          "preco_alto": {
-            "enabled": false,
-            "value": 0.0
-          },
-          "rsi_sobrevendido": {
-            "enabled": true,
-            "value": 30.0
-          },
-          "rsi_sobrecomprado": {
-            "enabled": true,
-            "value": 70.0
-          },
-          "bollinger_abaixo": {
-            "enabled": true
-          },
-          "bollinger_acima": {
-            "enabled": true
-          },
-          "macd_cruz_baixa": {
-            "enabled": true
-          },
-          "macd_cruz_alta": {
-            "enabled": true
-          },
-          "mme_cruz_morte": {
-            "enabled": true
-          },
-          "mme_cruz_dourada": {
-            "enabled": true
-          },
-          "hilo_compra": {
-            "enabled": true
-          },
-          "hilo_venda": {
-            "enabled": true
-          },
-          "fuga_capital_significativa": {
-            "enabled": false,
-            "value": "0.5, -2.0"
-          },
-          "entrada_capital_significativa": {
-            "enabled": false,
-            "value": "0.3, 1.0"
-          }
-        },
-        "triggered_conditions": {}
       }
     },
     {
