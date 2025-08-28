@@ -10,6 +10,7 @@ import json
 import subprocess
 from packaging.version import parse as parse_version
 import hashlib
+import logging
 
 from core_components import get_application_path
 
@@ -115,20 +116,21 @@ def check_for_updates(root, current_version, on_startup=False):
             with open(config_path, 'r') as f:
                 config = json.load(f)
             if config.get('update_on_startup'):
-                print("Flag 'update_on_startup' encontrada. Resetando e tentando atualizar...")
+                logging.info("Flag 'update_on_startup' encontrada. Resetando e tentando atualizar...")
                 # Reseta a flag ANTES de tentar a atualização para evitar loops
                 _set_update_on_startup_flag(False)
                 # Força a verificação e o download
                 threading.Thread(target=_perform_check, args=(root, current_version, True), daemon=True).start()
                 return  # Impede a verificação normal de ser executada
         except (json.JSONDecodeError, IOError) as e:
-            print(f"Erro ao ler o arquivo de configuracao: {e}")
+            logging.error(f"Erro ao ler o arquivo de configuracao: {e}")
 
     # Verificação normal (manual ou na inicialização sem a flag)
     threading.Thread(target=_perform_check, args=(root, current_version, False), daemon=True).start()
 
 def _perform_check(root, current_version, force_update=False):
     """ Realiza a chamada à API e compara as versões. """
+    logging.info("Verificando se ha novas atualizacoes...")
     try:
         response = requests.get(GITHUB_API_URL, timeout=15)
         response.raise_for_status()
@@ -136,7 +138,8 @@ def _perform_check(root, current_version, force_update=False):
         tag_name = latest_release.get("tag_name", "0.0.0")
         latest_version_str = tag_name.lstrip('v')
 
-        if force_update or parse_version(latest_version_str) > parse_version(current_version):
+        if parse_version(latest_version_str) > parse_version(current_version):
+            logging.info(f"Nova versao encontrada: {latest_version_str}. Versao atual: {current_version}.")
             assets = latest_release.get("assets", [])
             if force_update:
                 # Se forçado (vindo do update_on_startup), não mostra notificação, baixa direto.
@@ -145,8 +148,11 @@ def _perform_check(root, current_version, force_update=False):
                 # Se for verificação normal, mostra a notificação para o usuário decidir.
                 release_notes = latest_release.get("body", "")
                 root.after(0, show_update_notification, root, latest_version_str, release_notes, assets)
+        elif not force_update:
+             logging.info("Nenhuma nova atualizacao encontrada. A versao atual esta atualizada.")
+
     except Exception as e:
-        print(f"Erro ao verificar atualizações: {e}")
+        logging.error(f"Erro ao verificar atualizações: {e}")
 
 def show_update_notification(root, version, notes, assets):
     """ Mostra a janela de notificação e processa a escolha do usuário. """
@@ -178,8 +184,9 @@ def _set_update_on_startup_flag(status: bool):
             with open(config_path, 'r') as f: config = json.load(f)
         config['update_on_startup'] = status
         with open(config_path, 'w') as f: json.dump(config, f, indent=2)
+        logging.info(f"Flag 'update_on_startup' definida como: {status}")
     except Exception as e:
-        print(f"Erro ao salvar flag de atualização: {e}")
+        logging.error(f"Erro ao salvar flag de atualização: {e}")
 
 # --- Lógica de Download e Instalação ---
 
@@ -195,6 +202,7 @@ def download_and_install(root, assets):
             checksum_asset = asset
 
     if not exe_asset:
+        logging.error("Nenhum arquivo .exe encontrado na nova versão.")
         messagebox.showerror("Erro de Atualização", "Nenhum arquivo .exe encontrado na nova versão.")
         return
 
@@ -202,9 +210,11 @@ def download_and_install(root, assets):
     checksum_url = checksum_asset.get('browser_download_url') if checksum_asset else None
 
     if not download_url:
+        logging.error("URL para download não encontrada na nova versão.")
         messagebox.showerror("Erro de Atualização", "URL para download não encontrada.")
         return
 
+    logging.info(f"Iniciando download da nova versão a partir de: {download_url}")
     progress_window = DownloadProgressWindow(root)
 
     def download_thread():
@@ -212,13 +222,12 @@ def download_and_install(root, assets):
             expected_checksum = None
             if checksum_url:
                 try:
+                    logging.info(f"Baixando arquivo de checksum de: {checksum_url}")
                     checksum_response = requests.get(checksum_url, timeout=15)
                     checksum_response.raise_for_status()
                     expected_checksum = checksum_response.text.split()[0].lower()
                 except Exception as e:
-                    print(f"Alerta: Nao foi possivel baixar o checksum: {e}")
-                    # Nao bloqueia a atualização se o checksum falhar, mas avisa no console.
-                    # Em um cenario ideal, poderiamos querer bloquear.
+                    logging.warning(f"Nao foi possivel baixar o checksum: {e}. A atualizacao continuara sem verificacao de integridade.")
 
             download_path = os.path.join(get_application_path(), DOWNLOADED_FILE_NAME)
             response = requests.get(download_url, stream=True, timeout=30)
@@ -236,19 +245,25 @@ def download_and_install(root, assets):
                     if total_size > 0:
                         progress_window.update_progress(bytes_downloaded, total_size)
 
+            logging.info("Download da atualização concluído.")
+
             if expected_checksum:
+                logging.info(f"Verificando integridade do arquivo... Checksum esperado: {expected_checksum}")
                 calculated_checksum = sha256_hash.hexdigest()
                 if calculated_checksum != expected_checksum:
                     progress_window.destroy()
-                    os.remove(download_path)  # Limpa o arquivo corrompido
+                    os.remove(download_path)
+                    logging.error(f"Falha na verificacao do checksum! Esperado: {expected_checksum}, Calculado: {calculated_checksum}")
                     messagebox.showerror("Erro de Atualização", "A verificação de integridade (checksum) falhou. O arquivo baixado pode estar corrompido ou ter sido adulterado. A atualização foi cancelada por segurança.")
                     return
+                logging.info("Checksum verificado com sucesso.")
 
             progress_window.destroy()
             root.after(0, launch_updater_and_exit, root)
 
         except Exception as e:
             progress_window.destroy()
+            logging.error(f"Falha ao baixar a atualização: {e}")
             messagebox.showerror("Erro no Download", f"Falha ao baixar a atualização: {e}")
 
     threading.Thread(target=download_thread, daemon=True).start()
@@ -357,21 +372,29 @@ endlocal
     try:
         with open(script_path, 'w', encoding='utf-8') as f:
             f.write(script_content)
+        logging.info(f"Script de atualizacao criado em: {script_path}")
         return script_path
     except Exception as e:
-        print(f"Erro critico ao criar o script de atualizacao: {e}")
+        logging.error(f"Erro critico ao criar o script de atualizacao: {e}")
         return None
 
 def launch_updater_and_exit(root):
     """ Cria e executa o script de atualização, depois fecha a aplicação. """
-    messagebox.showinfo("Atualização Concluída", "Download concluido, o programa sera reiniciado.")
+    logging.info("Download concluido, o programa sera reiniciado para aplicar a atualizacao.")
+    messagebox.showinfo("Atualização Pronta", "O download foi concluído. O programa será reiniciado para aplicar a atualização.")
 
     try:
         updater_script_path = create_updater_script()
-        # Usar DETACHED_PROCESS para que o script não seja filho do processo principal
-        subprocess.Popen([updater_script_path], creationflags=subprocess.DETACHED_PROCESS, shell=True)
-        # Força o fechamento da aplicação
-        root.destroy()
-        sys.exit(0)
+        if updater_script_path:
+            logging.info(f"Lancando script de atualizacao: {updater_script_path}")
+            # Usar DETACHED_PROCESS para que o script não seja filho do processo principal
+            subprocess.Popen([updater_script_path], creationflags=subprocess.DETACHED_PROCESS, shell=True)
+            # Força o fechamento da aplicação
+            root.destroy()
+            sys.exit(0)
+        else:
+            logging.error("Nao foi possivel criar o script de atualizacao. A atualizacao foi abortada.")
+            messagebox.showerror("Erro Crítico", "Não foi possível criar o script de atualização. A atualização foi abortada.")
     except Exception as e:
+        logging.error(f"Nao foi possivel iniciar o atualizador: {e}")
         messagebox.showerror("Erro Crítico", f"Nao foi possível iniciar o atualizador: {e}")
