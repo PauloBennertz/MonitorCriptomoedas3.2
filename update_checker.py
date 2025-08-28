@@ -36,7 +36,7 @@ class UpdateNotificationWindow(tk.Toplevel):
         self.assets = assets
         self.result = "later"
         self.title("Nova Versão Disponível!")
-        self.geometry("600x550")
+        self.geometry("700x850")
         self.transient(parent)
         self.grab_set()
         self.protocol("WM_DELETE_WINDOW", self._on_closing)

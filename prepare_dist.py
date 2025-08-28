@@ -5,7 +5,7 @@ import sys
 def prepare_dist():
     """Prepara a pasta dist com todos os arquivos necessários"""
     
-    print("📦 Preparando pasta de distribuição...")
+    print("Preparando pasta de distribuicao...")
     
     # Criar pasta dist se não existir
     if not os.path.exists('dist'):
@@ -25,15 +25,15 @@ def prepare_dist():
                 if os.path.exists(dst + os.path.basename(src)):
                     shutil.rmtree(dst + os.path.basename(src))
                 shutil.copytree(src, dst + os.path.basename(src))
-                print(f"✅ Pasta copiada: {src} -> {dst}")
+                print(f"Pasta copiada: {src} -> {dst}")
             else:
                 shutil.copy2(src, dst)
-                print(f"✅ Arquivo copiado: {src} -> {dst}")
+                print(f"Arquivo copiado: {src} -> {dst}")
         except Exception as e:
-            print(f"❌ Erro ao copiar {src}: {e}")
+            print(f"Erro ao copiar {src}: {e}")
     
     # Criar arquivo de instruções
-    instructions = """# 🚀 Monitor de Criptomoedas
+    instructions = """# Monitor de Criptomoedas
 
 ## Como Executar
 
@@ -61,23 +61,23 @@ Se houver problemas:
 2. Verifique o antivírus
 3. Verifique a conexão com internet
 
-🎉 **Pronto para usar!**
+**Pronto para usar!**
 """
     
     with open('dist/LEIA-ME.txt', 'w', encoding='utf-8') as f:
         f.write(instructions)
     
-    print("✅ Pasta dist preparada com sucesso!")
-    print("📁 Arquivos na pasta dist:")
+    print("Pasta dist preparada com sucesso!")
+    print("Arquivos na pasta dist:")
     
     # Listar arquivos na pasta dist
     for item in os.listdir('dist'):
         path = os.path.join('dist', item)
         if os.path.isfile(path):
             size = os.path.getsize(path) / (1024 * 1024)  # MB
-            print(f"   📄 {item} ({size:.1f} MB)")
+            print(f"   {item} ({size:.1f} MB)")
         else:
-            print(f"   📁 {item}/")
+            print(f"   {item}/")
 
 if __name__ == "__main__":
     prepare_dist() 
