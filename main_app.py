@@ -642,7 +642,7 @@ def main():
     root = ttkb.Window(themename="darkly")
 
     # Adiciona a verificação de atualização na inicialização
-    check_for_updates(root, APP_VERSION, on_startup=True)
+    #check_for_updates(root, APP_VERSION, on_startup=True)
 
     root.withdraw()  # Esconde a janela principal inicialmente
 
